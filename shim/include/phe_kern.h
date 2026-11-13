@@ -123,7 +123,8 @@ static inline void bitmap_copy(unsigned long *d, const unsigned long *s, unsigne
 #define size_add(a, b) ((size_t)(a) + (size_t)(b))
 #define flex_array_size(p, m, n) (sizeof((p)->m[0]) * (size_t)(n))
 #define array_index_nospec(i, n) (i)
-#define strscpy(d, s, ...) phe_strscpy(d, s, sizeof(d))
+#define __phe_first(a, ...) a
+#define strscpy(d, s, ...) phe_strscpy(d, s, __phe_first(__VA_ARGS__ __VA_OPT__(,) sizeof(d)))
 ssize_t phe_strscpy(char *dst, const char *src, size_t size);
 #define strscpy_pad strscpy
 size_t strlcpy(char *dst, const char *src, size_t size);

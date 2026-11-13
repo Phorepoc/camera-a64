@@ -17,4 +17,5 @@ linux/ holds files of the Linux kernel, unmodified, from https://codeberg.org/me
 - arch/arm64/boot/dts/allwinner/: (GPL-2.0+ OR MIT), as stated in each file
 The kernel's own COPYING is kept as linux/COPYING.
 
-Not included: the OV5640 autofocus firmware (ov5640_af.bin) and the GC2145 init file; both are user-supplied.
+Not included: the OV5640 autofocus microcode (ov5640_af.bin), OmniVision firmware published with no licence; without it
+the camera works with fixed focus. (The GC2145 driver can read an optional gc2145-init.bin override; none is published.)

@@ -57,6 +57,11 @@ drivers/media/platform/sunxi/sun6i-csi/sun6i_csi_reg.h
 arch/arm64/boot/dts/allwinner/sun50i-a64.dtsi
 arch/arm64/boot/dts/allwinner/sun50i-a64-pinephone.dtsi
 arch/arm64/boot/dts/allwinner/sun50i-a64-pinephone-1.2.dts
+include/dt-bindings/clock/sun50i-a64-ccu.h
+include/dt-bindings/reset/sun50i-a64-ccu.h
+include/dt-bindings/gpio/gpio.h
+include/dt-bindings/interrupt-controller/arm-gic.h
+include/dt-bindings/interrupt-controller/irq.h
 COPYING
 LICENSES/preferred/GPL-2.0
 LICENSES/exceptions/Linux-syscall-note

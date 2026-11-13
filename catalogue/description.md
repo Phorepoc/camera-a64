@@ -5,6 +5,7 @@ a camera plug-in.
 
 Status: in development. The drivers build; they have not been run on a phone yet.
 
-Autofocus needs the OV5640 autofocus firmware (ov5640_af.bin), which is not included: copy your own file to the phone.
+The rear camera works with fixed focus. Autofocus needs the OV5640 autofocus firmware (ov5640_af.bin), which is not part
+of this package.
 
 Licence: GPL-2.0 (the Linux drivers' licence). The source is at https://github.com/Phorepoc/camera-a64.

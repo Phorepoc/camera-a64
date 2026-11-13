@@ -23,5 +23,7 @@ In the toolchain image (`ghcr.io/phorepoc/base`), from the repository root:
 
 - Files under `linux/` are never edited. A fix goes to the shim or the glue; if a driver change is unavoidable it goes
   in `patches/` as a separate, reviewed patch applied at build time.
-- The OV5640 autofocus firmware and the GC2145 init file are not redistributable and are never committed: the user
-  supplies them.
+- Firmware: the OV5640 autofocus microcode (`ov5640_af.bin`, OmniVision's, published with no licence) is not part of
+  this package. Without it the driver runs with fixed focus (`ov5640_af_init` only warns), and the port keeps that
+  fallback. The GC2145 driver's optional `gc2145-init.bin` override does not exist as a published file; the driver's
+  built-in register tables are used.
