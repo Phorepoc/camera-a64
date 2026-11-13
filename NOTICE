@@ -1,8 +1,10 @@
 camera-a64: the PinePhone camera drivers of Phorepoc
 Copyright The Phorepoc Authors (see AUTHORS)
 
-Our files (shim/, recipes/, and later glue/) are licensed under the GNU General Public License, version 2 only (LICENSE),
-the licence of the Linux drivers they are built with. The shim's core started as a copy of our WiFi shim in the
+Our files (shim/, glue/, recipes/, registry/, os/src/phecamserver/) are licensed under the GNU General Public License,
+version 2 only (LICENSE), the licence of the Linux drivers they are built with; phecam_api.h and our files in
+os/src/phecama64/ (phecamsource.*, TestCameraUids.hrh, phecama64.mmp) under the Apache License 2.0
+(LICENSES/Apache-2.0.txt). The shim's core started as a copy of our WiFi shim in the
 adaptation-a64 repository (the same authors), relicensed here under GPL-2.0-only.
 
 linux/ holds files of the Linux kernel, unmodified, from https://codeberg.org/megi/linux at commit
@@ -16,6 +18,11 @@ linux/ holds files of the Linux kernel, unmodified, from https://codeberg.org/me
   (LICENSES/Linux-syscall-note.txt)
 - arch/arm64/boot/dts/allwinner/: (GPL-2.0+ OR MIT), as stated in each file
 The kernel's own COPYING is kept as linux/COPYING.
+
+os/src/phecama64/ TestCamera.*, test_*.* and E7015C61.rss derive from the TestCamera ECam plug-in of the 2010 Symbian
+release (oss.FCL.sf.os.mm, mmplugins/cameraplugins), copyright Nokia Corporation and/or its subsidiary(-ies), with
+changes by The Phorepoc Authors: Eclipse Public License 2.0 (LICENSES/EPL-2.0.txt) OR GPL-2.0-or-later, as each
+file's header states.
 
 Not included: the OV5640 autofocus microcode (ov5640_af.bin), OmniVision firmware published with no licence; without it
 the camera works with fixed focus. (The GC2145 driver can read an optional gc2145-init.bin override; none is published.)

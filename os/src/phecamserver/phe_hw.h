@@ -1,7 +1,7 @@
 /* Copyright The Phorepoc Authors
  * SPDX-License-Identifier: GPL-2.0-only */
 
-/* phe_hw.h -- the boundary between the C side (vendored drivers + shim/rt) and the Symbian kernel side (glue/*.cpp).
+/* phe_hw.h -- the boundary between the C side (vendored drivers + shim/rt) and the Symbian side (phe_user.cpp, in the camera server process).
  * Everything the shim cannot do in portable C goes through these few calls: MMIO mapping, interrupts, physically
  * contiguous memory, the A64 clock/reset gates, GPIO pins, the PMIC rails, firmware files. */
 #ifndef PHE_HW_H
@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-void *phe_hw_map(uint32_t phys, uint32_t size);				/* uncached kernel mapping, NULL = fail */
+void *phe_hw_map(uint32_t phys, uint32_t size);				/* uncached mapping, NULL = fail */
 int phe_hw_irq_bind(int irq, int (*isr)(int irq, void *ctx), void *ctx);	/* GIC SPI number + 32 */
 void phe_hw_irq_enable(int irq, int on);
 void *phe_hw_dma_alloc(size_t size, uint32_t *phys);			/* contiguous, uncached */

@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 
 /* phe_camera.c -- what a Linux camera application does through V4L2 and the media controller (media-ctl + a capture
- * loop), done in-kernel for the Symbian PDD (glue/a64camerapdd.cpp): pick the sensor by enabling its link to the
+ * loop), done in the camera server (os/src/phecamserver): pick the sensor by enabling its link to the
  * CSI bridge, set the sensor and bridge pad formats, set the capture format, request and queue vb2 MMAP buffers,
- * stream on, dequeue filled frames and hand their bytes to the PDD, requeue. All calls go through the vendored
+ * stream on, dequeue filled frames and hand their bytes to the server, requeue. All calls go through the vendored
  * drivers' own V4L2 entry points (ioctl ops, subdev pad ops, vb2), so the Linux code runs as it does under Linux. */
 #include "../shim/include/phe_linux.h"
 #include <media/v4l2-device.h>
@@ -15,7 +15,7 @@
 #include "../linux/drivers/media/platform/sunxi/sun6i-csi/sun6i_csi.h"
 #include "../linux/drivers/media/platform/sunxi/sun6i-csi/sun6i_csi_bridge.h"
 #include "../linux/drivers/media/platform/sunxi/sun6i-csi/sun6i_csi_capture.h"
-#include "phe_camera.h"
+#include "../os/src/phecamserver/phe_camera.h"
 
 int phe_camera_probe_all(void);
 struct platform_device *phe_camera_csi_pdev(void);
@@ -127,7 +127,7 @@ int phe_camera_start(unsigned int nbufs)
 	return 0;
 }
 
-/* one frame: dequeue (waits), copy into the PDD's buffer, requeue. Returns the bytes copied. */
+/* one frame: dequeue (waits), copy into the server's buffer, requeue. Returns the bytes copied. */
 int phe_camera_next_frame(void *dst, unsigned int len)
 {
 	struct v4l2_buffer b = { .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };

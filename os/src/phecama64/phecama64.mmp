@@ -1,0 +1,40 @@
+// Copyright The Phorepoc Authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// phecama64.mmp -- the camera-a64 ECam plug-in: the 2010 TestCamera plug-in (as the image's phecam plug-in, with
+// Phorepoc's edits) with its pixel source = the camera server (phecamsource.cpp, RPheCamera). Version 5 in its
+// registration, so it wins over the image's plug-in once installed (core's ecampluginsupport: installed plug-ins).
+
+#include <ecamuids.hrh>
+#include "TestCameraUids.hrh"
+
+TARGET			phecama64.dll
+TARGETTYPE		PLUGIN
+CAPABILITY		ALL -TCB
+UID				0x10009D8D KUidOnboardCameraTestDll
+VENDORID		0
+
+SOURCEPATH		.
+SOURCE			TestCamera.cpp
+SOURCE			test_advanced_settings.cpp
+SOURCE			test_snapshot.cpp
+SOURCE			test_image_processing.cpp
+SOURCE			phecamsource.cpp
+
+USERINCLUDE		.
+USERINCLUDE		../phecamserver
+OS_LAYER_SYSTEMINCLUDE_SYMBIAN
+
+START RESOURCE	E7015C61.rss
+TARGET phecama64.rsc
+END
+
+LIBRARY			euser.lib
+LIBRARY			ecampluginsupport.lib
+LIBRARY			ecam.lib
+LIBRARY			fbscli.lib
+LIBRARY			bitgdi.lib
+LIBRARY			ws32.lib
+LIBRARY			efsrv.lib
+LIBRARY			hal.lib
+SMPSAFE

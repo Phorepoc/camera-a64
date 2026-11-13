@@ -3,7 +3,7 @@
 
 /* phe_lib.c -- the freestanding string and formatting helpers of phe_rt.h: strlen/strcmp/strncmp/memcmp/memdup and a
  * vsnprintf with the conversions the vendored code prints (%d %i %u %x %X %o %c %s %p %%, flags - 0 + space #,
- * width, precision, h hh l ll z t j). Allocation, locks, time and logging are the kernel side's (glue/phe_kern.cpp). */
+ * width, precision, h hh l ll z t j). Allocation, locks, time and logging are the server's (os/src/phecamserver/phe_user.cpp). */
 #include "../include/phe_rt.h"
 #include <stdbool.h>
 

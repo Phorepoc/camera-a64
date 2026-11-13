@@ -1,0 +1,24 @@
+// Copyright The Phorepoc Authors
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// phecamserver.mmp -- the camera server: the Linux camera stack (the prebuilt libphecamlinux.a of recipes/build.sh,
+// linked in by the registry's arm_archives) with its Symbian side. CommDD: the CamHw.A64 channel requires it.
+
+TARGET			phecamserver.exe
+TARGETTYPE		exe
+UID				0 0xE7015C60
+CAPABILITY		CommDD
+VENDORID		0
+EPOCSTACKSIZE	0x8000
+EPOCHEAPSIZE	0x10000 0x2000000
+
+OS_LAYER_SYSTEMINCLUDE_SYMBIAN
+USERINCLUDE		.
+USERINCLUDE		../phorepoc-arm/a64/camera
+
+SOURCEPATH		.
+SOURCE			phecamserver.cpp
+SOURCE			phe_user.cpp
+
+LIBRARY			euser.lib efsrv.lib hal.lib
+SMPSAFE

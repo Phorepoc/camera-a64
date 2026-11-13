@@ -1,7 +1,7 @@
 /* Copyright The Phorepoc Authors
  * SPDX-License-Identifier: GPL-2.0-only */
 
-/* phe_rt.h -- the runtime under the shim (phe_core.h), C-callable, implemented on the Symbian kernel in shim/rt (allocation,
+/* phe_rt.h -- the runtime under the shim (phe_core.h), C-callable, implemented in shim/rt and the camera server (os/src/phecamserver/phe_user.cpp) (allocation,
  * locks, completions, work items, timers, delays, time, logging, firmware). It started as a copy of our WiFi shim's
  * shim_rt.h (adaptation-a64, the same authors) without the SDIO and sk_buff parts. */
 #ifndef SHIM_RT_H
@@ -33,7 +33,7 @@ void shim_panic(const char *what);
 void shim_random_bytes(uint8_t *p, unsigned n);
 
 
-/* locks: the mutex is a real (sleeping) kernel mutex, the spin lock a fast mutex (the driver runs on one DFC thread) */
+/* locks: the mutex is an RMutex, the spin lock an RFastLock (the server's worker and interrupt threads) */
 void shim_mutex_init(struct mutex *m);
 void shim_mutex_destroy(struct mutex *m);
 void shim_mutex_lock(struct mutex *m);

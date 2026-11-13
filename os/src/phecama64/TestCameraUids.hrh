@@ -1,0 +1,13 @@
+// Copyright The Phorepoc Authors
+// SPDX-License-Identifier: Apache-2.0
+
+// The ECOM UIDs of the camera-a64 plug-in (phecama64.dll). Version 5 in its registration: above the image's fallback
+// plug-in (phecam, version 4), so ecampluginsupport picks this one once the package is installed.
+#ifndef TESTCAMERAUIDS_HRH
+#define TESTCAMERAUIDS_HRH
+
+#define KUidOnboardCameraTestDll	0xE7015C61
+#define KUidOnboardCameraTestPlugin	0xE7015C62
+#define KUidOnboardCameraTestInfo	0xE7015C63
+
+#endif

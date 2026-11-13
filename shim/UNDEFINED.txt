@@ -1,86 +1,52 @@
 # shim/UNDEFINED.txt -- the symbols camera-a64.o (recipes/build.sh: ld -r of every Linux .c, the shim runtime and the
-# glue) still imports. Everything the Linux code needs from the shim (shim_*, phe_hw_*) is now defined; what is left is
-# resolved at the final .pdd link (emitter, imports by ordinal from ekern.dll) or by the toolchain:
-#   - kernel imports (Kern::, NKern::, Epoc::, Interrupt::, DPlatChunkHw, DObject, DPhysicalDevice, TDfc, descriptors,
-#     operator new/delete, memclr/memcpy/memset, __e32_atomic_*): ekern.def exports
-#   - A64PmicUpdateReg: adaptation-a64's AXP803 access; NOT yet exported by ekern (open: needs an ekern export, or a
-#     kernel extension API for the rails)
-#   - __aeabi_* / __cxa_pure_virtual: libgcc / the Symbian runtime (dfpaeabi, drtaeabi, edllstub)
-#   - __start_ / __stop_ phe_drivers, phe_initcalls: provided by the final linker for the sections
+# glue) still imports, and who provides them in the camera server (os/src/phecamserver/phecamserver.mmp):
+#   - shim_* (allocation, locks, delays, time, logging) and phe_hw_* (CSI window, DMA, clocks, reset, GPIOs, rails,
+#     the interrupt, firmware): os/src/phecamserver/phe_user.cpp, on euser and the CamHw.A64 channel
+#   - memcpy / memset: euser; __aeabi_*: the toolchain's runtime
+#   - __start_ / __stop_ phe_drivers, phe_initcalls: the final link (the linker's section bounds)
+# Checked: ld -r of camera-a64.o + the server's two objects leaves only these, the euser/efsrv/hal imports and libgcc.
 # Generated list:
-A64PmicUpdateReg
-_ZN10NFastMutexC1Ev
-_ZN12DPlatChunkHw3NewERPS_mij
-_ZN15DPhysicalDevice4InfoEiPv
-_ZN15DPhysicalDeviceD2Ev
-_ZN4Epoc15FreePhysicalRamEmi
-_ZN4Epoc16AllocPhysicalRamEiRmi
-_ZN4Kern11MutexCreateERP6DMutexRK6TDesC8j
-_ZN4Kern11MutexSignalER6DMutex
-_ZN4Kern17DynamicDfcQCreateERP14TDynamicDfcQueiRK6TDesC8
-_ZN4Kern21QueryVersionSupportedERK8TVersionS2_
-_ZN4Kern4FreeEPv
-_ZN4Kern5AllocEi
-_ZN4Kern5FaultEPKci
-_ZN4Kern6AllocZEi
-_ZN4Kern6PrintfEPKcz
-_ZN4Kern8InfoCopyER5TDes8RK6TDesC8
-_ZN4Kern8NanoWaitEm
-_ZN4Kern9MutexWaitER6DMutex
-_ZN4TDfc3AddEv
-_ZN4TDfc5EnqueEv
-_ZN4TDfc6CancelEv
-_ZN4TDfcC1EPFvPvES0_P7TDfcQuei
-_ZN4TDfcD1Ev
-_ZN5DBasenwEj
-_ZN5NKern10TickPeriodEv
-_ZN5NKern10TimerTicksEi
-_ZN5NKern11FastCounterEv
-_ZN5NKern13CurrentThreadEv
-_ZN5NKern13ThreadEnterCSEv
-_ZN5NKern13ThreadLeaveCSEv
-_ZN5NKern20FastCounterFrequencyEv
-_ZN5NKern5SleepEm
-_ZN5NKern6FMWaitEP10NFastMutex
-_ZN5NKern8FMSignalEP10NFastMutex
-_ZN5NKern9TickCountEv
-_ZN5TDes84CopyERK6TDesC8
-_ZN5TDes85FillZEi
-_ZN5TPtr8C1EPhi
-_ZN6NTimerD1Ev
-_ZN6TPtrC8C1EPKhi
-_ZN7DObject12AddToProcessEP8DProcess
-_ZN7DObject12AddToProcessEP8DProcessj
-_ZN7DObject12DoAppendNameER5TDes8
-_ZN7DObject17RequestUserHandleEP7DThread10TOwnerType
-_ZN7DObject17RequestUserHandleEP7DThread10TOwnerTypej
-_ZN7DObject5CloseEPv
-_ZN7DObject7SetNameEPK6TDesC8
-_ZN7DObjectC2Ev
-_ZN8TVersionC1Eiii
-_ZN8TVersionC1Ev
-_ZN9Interrupt4BindEiPFvPvES0_
-_ZN9Interrupt6EnableEi
-_ZN9Interrupt7DisableEi
-_ZNK15DPhysicalDevice11IsAvailableEiPK6TDesC8
-_ZNK15DPhysicalDevice21QueryVersionSupportedERK8TVersion
-_ZNK6TDesC84LeftEi
-_ZTV15DPhysicalDevice
-_ZdaPv
-_ZdlPvj
-_Znaj
-_Znwj
 __aeabi_idiv
 __aeabi_ldivmod
 __aeabi_uidiv
 __aeabi_uidivmod
 __aeabi_uldivmod
-__cxa_pure_virtual
-__e32_atomic_add_ord32
 __start_phe_drivers
 __start_phe_initcalls
 __stop_phe_drivers
 __stop_phe_initcalls
-memclr
 memcpy
 memset
+phe_hw_clk_enable
+phe_hw_clk_get_rate
+phe_hw_clk_set_rate
+phe_hw_dma_alloc
+phe_hw_dma_free
+phe_hw_firmware
+phe_hw_firmware_free
+phe_hw_gpio_dir
+phe_hw_gpio_get
+phe_hw_gpio_set
+phe_hw_irq_bind
+phe_hw_irq_enable
+phe_hw_map
+phe_hw_rail
+phe_hw_reset
+shim_alloc
+shim_free
+shim_jiffies
+shim_ktime_ns
+shim_log
+shim_msleep
+shim_mutex_destroy
+shim_mutex_init
+shim_mutex_lock
+shim_mutex_trylock
+shim_mutex_unlock
+shim_panic
+shim_spin_init
+shim_spin_lock
+shim_spin_unlock
+shim_udelay
+shim_usleep
+shim_zalloc

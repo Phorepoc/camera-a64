@@ -7,7 +7,7 @@
  * does not take on Symbian (char-device nodes, sysfs, dma-buf, user-page pinning, mmap, kthreads, request fds)
  * succeed as no-ops or fail with -ENOSYS; nothing in them is reached by the glue. */
 #include "../include/phe_fwnode.h"
-#include "../../glue/phe_hw.h"
+#include "../../os/src/phecamserver/phe_hw.h"
 
 /* ---- logging, names ---- */
 void phe_dev_log(const struct device *dev, const char *level, const char *fmt, ...)
