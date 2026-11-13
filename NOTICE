@@ -1,0 +1,20 @@
+camera-a64: the PinePhone camera drivers of Phorepoc
+Copyright The Phorepoc Authors (see AUTHORS)
+
+Our files (shim/, recipes/, and later glue/) are licensed under the GNU General Public License, version 2 only (LICENSE),
+the licence of the Linux drivers they are built with. The shim's core started as a copy of our WiFi shim in the
+adaptation-a64 repository (the same authors), relicensed here under GPL-2.0-only.
+
+linux/ holds files of the Linux kernel, unmodified, from https://codeberg.org/megi/linux at commit
+88af81e226a88ae422a9c301246e7ae64cda0b75 (each pinned in linux/SHA256SUMS). Each keeps its own notice:
+- drivers/media/platform/sunxi/sun6i-csi/: GPL-2.0+, copyright Magewell Electronics, Bootlin and contributors
+- drivers/media/i2c/ov5640.c: GPL-2.0-or-later, copyright Freescale / Mentor Graphics and contributors, with
+  additions by Ondrej Jirman
+- drivers/media/i2c/gc2145.c: GPL-2.0-or-later, copyright Ondrej Jirman, STMicroelectronics
+- drivers/i2c/busses/i2c-gpio.c: GPL-2.0-only, copyright Atmel Corporation; drivers/i2c/algos/i2c-algo-bit.c: GPL-2.0+
+- include/media/, include/linux/: GPL-2.0 per file; include/uapi/linux/: GPL-2.0 WITH Linux-syscall-note
+  (LICENSES/Linux-syscall-note.txt)
+- arch/arm64/boot/dts/allwinner/: (GPL-2.0+ OR MIT), as stated in each file
+The kernel's own COPYING is kept as linux/COPYING.
+
+Not included: the OV5640 autofocus firmware (ov5640_af.bin) and the GC2145 init file; both are user-supplied.
