@@ -52,7 +52,7 @@ KFLAGS=(-march=armv7-a -marm -mfloat-abi=soft -mno-unaligned-access -fshort-wcha
   -D__SMP__ -D__CPU_HAS_VFP -D__VFP_V3 -D__CPU_CORTEX_A9__ -D__CPU_ARM_HAS_GIC -D__CPU_ARM_HAS_GENERIC_TIMER
   -I"$TC/overlay" -I"$EI" -I"$EI/kernel" -I"$EI/memmodel" -I"$EI/nkernsmp" -I"$EI/nkernsmp/arm" -I"$EI/kernel/arm"
   -I"$EI/memmodel/epoc" -I"$TC/kinc" -I"$CAMSC/include" -I"$CAMSC/template_pdd" -I"$REPO/glue" -Wno-attributes)
-for s in "$REPO"/glue/*.cpp "$CAMSC"/template_pdd/camerasc.cpp; do
+for s in "$REPO"/glue/*.cpp; do	# not template_pdd/camerasc.cpp: EPL-1.0, cannot be linked with GPL code
   [ -f "$s" ] || continue
   o="$OUT/$(basename "${s%.cpp}").o"
   if "$CXX" "${KFLAGS[@]}" -c "$s" -o "$o" 2> "$o.log"; then
