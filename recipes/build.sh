@@ -36,6 +36,32 @@ for s in "${SRCS[@]}"; do
     [ "${KEEP_GOING:-0}" = 1 ] || { head -40 "$o.log"; exit 1; }
   fi
 done
+
+# the Symbian kernel side (C++): our glue + the 2010 template camera PDD (unmodified), with the flags adaptation-a64's
+# link_ekern.sh uses for its kernel objects. EPOC32 = an epoc32 tree with include/ (the core-arm image's /build/epoc32).
+EPOC32=${EPOC32:-/build/epoc32}
+CAMSC="$REPO/third_party/symbian2010-camerasc"
+CXX=${CXX:-arm-none-eabi-g++}
+TC=${TC:-/build/toolchain}		# symbian-2010/toolchain: symbian_gcc_prefix.h, overlay/, kinc/
+EI="$EPOC32/include"
+KFLAGS=(-march=armv7-a -marm -mfloat-abi=soft -mno-unaligned-access -fshort-wchar -fno-short-enums -fno-exceptions
+  -fno-rtti -fpermissive -fno-lifetime-dse -fno-strict-aliasing -fno-delete-null-pointer-checks -fno-builtin -O2
+  -include "$TC/symbian_gcc_prefix.h"
+  -D__SYMBIAN32__ -D__GCCE__ -D__EABI__ -D__MARM__ -D__EPOC32__ -D_UNICODE -D__KERNEL_MODE__ -D__IN_KERNEL__
+  -D__MARM_ARMV7__ -D__DEMAND_PAGING__ -D__MEMMODEL_FLEXIBLE__ -D__A64__
+  -D__SMP__ -D__CPU_HAS_VFP -D__VFP_V3 -D__CPU_CORTEX_A9__ -D__CPU_ARM_HAS_GIC -D__CPU_ARM_HAS_GENERIC_TIMER
+  -I"$TC/overlay" -I"$EI" -I"$EI/kernel" -I"$EI/memmodel" -I"$EI/nkernsmp" -I"$EI/nkernsmp/arm" -I"$EI/kernel/arm"
+  -I"$EI/memmodel/epoc" -I"$TC/kinc" -I"$CAMSC/include" -I"$CAMSC/template_pdd" -I"$REPO/glue" -Wno-attributes)
+for s in "$REPO"/glue/*.cpp "$CAMSC"/template_pdd/camerasc.cpp; do
+  [ -f "$s" ] || continue
+  o="$OUT/$(basename "${s%.cpp}").o"
+  if "$CXX" "${KFLAGS[@]}" -c "$s" -o "$o" 2> "$o.log"; then
+    objs+=("$o"); echo "ok    ${s#$REPO/}"
+  else
+    fail=$((fail + 1)); echo "FAIL  ${s#$REPO/} ($(grep -c 'error:' "$o.log") errors, $o.log)"
+    [ "${KEEP_GOING:-0}" = 1 ] || { head -40 "$o.log"; exit 1; }
+  fi
+done
 [ "$fail" = 0 ] || { echo "$fail file(s) failed"; exit 1; }
 
 "$LD" -r -o "$OUT/camera-a64.o" "${objs[@]}"
