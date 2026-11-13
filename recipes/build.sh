@@ -17,20 +17,13 @@ NM=${NM:-arm-none-eabi-nm}
 mkdir -p "$OUT"
 
 # The Symbian ARM kernel's code-generation flags (armv7-a, ARM state, no unaligned access), freestanding C.
-CFLAGS=(-march=armv7-a -marm -mfloat-abi=soft -mno-unaligned-access -ffreestanding -fno-builtin -fno-common
+CFLAGS=(-march=armv7-a -marm -mfloat-abi=soft -mno-unaligned-access -ffreestanding -fno-builtin -fno-common -fno-short-enums
   -fno-strict-aliasing -fno-delete-null-pointer-checks -fwrapv -O2 -std=gnu11 -Wall -Wno-unused-function
   -Wno-unused-variable -Wno-unused-but-set-variable -Wno-address-of-packed-member
   -include "$REPO/shim/include/phe_config.h" -I"$REPO/linux/include" -I"$REPO/linux/include/uapi" -I"$REPO/shim/include")
 
-SRCS=(
-  linux/drivers/i2c/algos/i2c-algo-bit.c
-  linux/drivers/i2c/busses/i2c-gpio.c
-  linux/drivers/media/i2c/ov5640.c
-  linux/drivers/media/i2c/gc2145.c
-  linux/drivers/media/platform/sunxi/sun6i-csi/sun6i_csi.c
-  linux/drivers/media/platform/sunxi/sun6i-csi/sun6i_csi_bridge.c
-  linux/drivers/media/platform/sunxi/sun6i-csi/sun6i_csi_capture.c
-)
+# every vendored .c (the drivers and the V4L2 / videobuf2 / media-controller core), then ours
+SRCS=($(cd "$REPO" && find linux/drivers -name '*.c' | LC_ALL=C sort))
 for f in "$REPO"/shim/rt/*.c "$REPO"/glue/*.c; do [ -f "$f" ] && SRCS+=("${f#$REPO/}"); done
 
 fail=0; objs=()

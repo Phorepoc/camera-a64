@@ -417,8 +417,8 @@ typedef struct wait_queue_head { int wakeups; } wait_queue_head_t;
 #define wake_up(q) ((q)->wakeups++)
 #define init_completion(c) shim_completion_init(c)
 #define reinit_completion(c) shim_completion_reinit(c)
-#define complete(c) shim_complete(c)
-#define complete_all(c) shim_complete_all(c)
+static inline void complete(struct completion *c) { shim_complete(c); }
+static inline void complete_all(struct completion *c) { shim_complete_all(c); }
 #define wait_for_completion(c) ((void)shim_wait_for_completion(c, 0))
 #define wait_for_completion_timeout(c, j) shim_wait_for_completion(c, (unsigned long)(j))
 #define wait_for_completion_interruptible_timeout(c, j) ((long)shim_wait_for_completion(c, (unsigned long)(j)))
@@ -498,7 +498,7 @@ struct timer_list { void (*function)(struct timer_list *); void *k; unsigned lon
 #define kzalloc(sz, gfp) shim_zalloc((size_t)(sz))
 #define kcalloc(n, sz, gfp) shim_zalloc((size_t)(n) * (size_t)(sz))
 #define kmalloc_array(n, sz, gfp) shim_alloc((size_t)(n) * (size_t)(sz))
-#define kfree(p) shim_free((void *)(p))
+static inline void kfree(const void *p) { shim_free((void *)p); }
 #define kvfree(p) shim_free((void *)(p))
 #define vmalloc(sz) shim_alloc((size_t)(sz))
 #define vzalloc(sz) shim_zalloc((size_t)(sz))

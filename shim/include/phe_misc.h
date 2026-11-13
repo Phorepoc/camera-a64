@@ -67,6 +67,7 @@ struct file_operations {
 	int (*mmap)(struct file *, struct vm_area_struct *);
 	int (*open)(struct inode *, struct file *);
 	int (*release)(struct inode *, struct file *);
+	unsigned long (*get_unmapped_area)(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
 };
 int simple_open(struct inode *inode, struct file *file);
 loff_t noop_llseek(struct file *file, loff_t offset, int whence);

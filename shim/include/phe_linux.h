@@ -10,5 +10,6 @@
 #include "phe_core.h"
 #include "phe_dev.h"
 #include "phe_misc.h"
+#include "phe_kern.h"
 
 #endif

@@ -114,9 +114,9 @@ struct vm_area_struct;
 struct page;
 struct module;
 struct file_operations;
-struct file { void *private_data; fmode_t f_mode; unsigned int f_flags; };
+struct file { void *private_data; fmode_t f_mode; unsigned int f_flags; const struct file_operations *f_op; struct inode *f_inode; };
 struct phe_kobject { int unused; };
-struct cdev { struct phe_kobject kobj; const struct file_operations *ops; };
+struct cdev { struct phe_kobject kobj; struct module *owner; const struct file_operations *ops; };
 #define O_NONBLOCK 04000
 #define FMODE_READ 0x1
 #define FMODE_WRITE 0x2
@@ -133,9 +133,12 @@ struct dev_pm_ops {
 	int (*runtime_resume)(struct device *dev);
 	int (*runtime_idle)(struct device *dev);
 };
-struct device_driver { const char *name; const struct of_device_id *of_match_table; const struct dev_pm_ops *pm;
+struct device_driver { const char *name; struct module *owner; const struct of_device_id *of_match_table; const struct dev_pm_ops *pm;
 	const void *acpi_match_table; };
 struct bus_type { const char *name; };
+struct device_dma_parameters { unsigned int max_segment_size; unsigned int min_align_mask; unsigned long segment_boundary_mask; };
+struct attribute_group;
+struct class;
 struct device {
 	struct device *parent;
 	const char *init_name;
@@ -148,6 +151,10 @@ struct device {
 	u64 *dma_mask;
 	u64 coherent_dma_mask;
 	void (*release)(struct device *dev);
+	u32 devt;
+	const struct class *class;
+	struct device_dma_parameters *dma_parms;
+	const struct attribute_group **groups;
 	int phe_pm_usage, phe_pm_active, phe_pm_enabled, phe_pm_autosuspend;	/* runtime PM (shim/rt) */
 };
 #define dev_get_drvdata(d) ((d)->driver_data)
@@ -186,7 +193,7 @@ int devm_add_action_or_reset(struct device *dev, void (*action)(void *), void *d
 
 /* ---- firmware nodes / OF / properties (a static node tree from the device tree: glue/) ---- */
 struct phe_fwnode;
-struct fwnode_handle { const struct phe_fwnode *node; };
+struct fwnode_handle { const struct phe_fwnode *node; struct fwnode_handle *secondary; struct device *dev; };
 struct device_node { struct fwnode_handle fwnode; const char *name; const char *full_name; };
 struct fwnode_endpoint { unsigned int port; unsigned int id; const struct fwnode_handle *local_fwnode; };
 #define NR_FWNODE_REFERENCE_ARGS 16
