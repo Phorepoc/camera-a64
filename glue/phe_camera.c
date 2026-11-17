@@ -109,6 +109,24 @@ int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint
 	return 0;
 }
 
+/* bring-up readback: the sensor registers that decide whether a DVP frame leaves the chip (OV5640 datasheet: 0x3008
+ * system control, 0x300e MIPI/DVP select, 0x3017/0x3018 pad output enables, 0x4740 DVP polarity, 0x4300 format) */
+static void dump_sensor(unsigned int unit)
+{
+	static const u16 regs[] = { 0x300a, 0x3008, 0x300e, 0x3017, 0x3018, 0x4740, 0x4300, 0x501f, 0x3034, 0x3035, 0x3036, 0x3037, 0x3108 };
+	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
+	struct i2c_client *c = sd ? v4l2_get_subdevdata(sd) : NULL;
+	unsigned int i;
+	if (!c)
+		return;
+	for (i = 0; i < ARRAY_SIZE(regs); ++i) {
+		u8 a[2] = { regs[i] >> 8, regs[i] & 0xff }, v = 0;
+		struct i2c_msg m[2] = { { .addr = c->addr, .flags = 0, .len = 2, .buf = a }, { .addr = c->addr, .flags = I2C_M_RD, .len = 1, .buf = &v } };
+		int r = i2c_transfer(c->adapter, m, 2);
+		shim_log("camera-a64: sensor @%02x reg %04x = %02x (r %d)", c->addr, regs[i], v, r);
+	}
+}
+
 int phe_camera_start(unsigned int nbufs)
 {
 	struct v4l2_requestbuffers req = { .count = nbufs, .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
@@ -130,6 +148,7 @@ int phe_camera_start(unsigned int nbufs)
 		return r;
 	}
 	shim_log("camera-a64: start: %u buffers, streaming", req.count);
+	dump_sensor(0);
 	streaming = 1;
 	return 0;
 }
