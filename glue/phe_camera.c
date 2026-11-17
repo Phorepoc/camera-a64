@@ -132,7 +132,10 @@ static int locked_qbuf(struct v4l2_buffer *b)
  * system control, 0x300e MIPI/DVP select, 0x3017/0x3018 pad output enables, 0x4740 DVP polarity, 0x4300 format) */
 static void dump_sensor(unsigned int unit)
 {
-	static const u16 regs[] = { 0x300a, 0x3008, 0x300e, 0x3017, 0x3018, 0x4740, 0x4300, 0x501f, 0x3034, 0x3035, 0x3036, 0x3037, 0x3108 };
+	/* + AEC/AGC (datasheet ch. 4.6): 0x3503 manual bits, 0x3a0f/10/1b/1e/11/1f stable/fast windows, 0x56a1 average
+	 * luminance, 0x3500-02 exposure, 0x350a/b gain; 0x3406 AWB manual, 0x5001 ISP enables */
+	static const u16 regs[] = { 0x300a, 0x3008, 0x300e, 0x3017, 0x3018, 0x4740, 0x4300, 0x501f, 0x3034, 0x3035, 0x3036, 0x3037, 0x3108,
+		0x3503, 0x3a00, 0x3a0f, 0x3a10, 0x3a1b, 0x3a1e, 0x3a11, 0x3a1f, 0x56a1, 0x3500, 0x3501, 0x3502, 0x350a, 0x350b, 0x3406, 0x5001 };
 	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
 	struct i2c_client *c = sd ? v4l2_get_subdevdata(sd) : NULL;
 	unsigned int i;
@@ -186,6 +189,8 @@ int phe_camera_next_frame(void *dst, unsigned int len)
 		return -EINVAL;
 	{
 		static unsigned int calls;
+		if (calls == 299)
+			dump_sensor(0);		/* again after ~10 s of streaming: has the AEC moved? */
 		if (++calls <= 3)
 			shim_log("camera-a64: next_frame #%u: dqbuf (streaming %d, done list %s, owned by driver %u, queued %u)", calls,
 				csi->capture.state.streaming, list_empty(&csi->capture.queue.done_list) ? "empty" : "has buffers",
