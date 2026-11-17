@@ -17,6 +17,7 @@ struct phe_camera_ctrl_info {		/* struct v4l2_queryctrl, the fields a client nee
 int phe_camera_init(void);
 int phe_camera_count(void);
 int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint32_t pixelformat, uint32_t mbus_code,
+	unsigned int fps,	/* 0 = leave the frame rate */
 	unsigned int *bytesperline, unsigned int *sizeimage);
 int phe_camera_start(unsigned int nbufs);
 int phe_camera_rotation(int unit);	/* V4L2_CID_CAMERA_SENSOR_ROTATION, degrees CCW; 0 if the sensor has none */

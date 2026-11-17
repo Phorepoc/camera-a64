@@ -21,6 +21,8 @@ TInt PheHwOpen();		// phe_user.cpp
 // V4L2 / media-bus codes (videodev2.h, media-bus-format.h)
 static const TUint32 KPixFmtUyvy = 0x59565955;		// v4l2_fourcc('U','Y','V','Y')
 static const TUint32 KMbusUyvy8_2x8 = 0x2006;		// MEDIA_BUS_FMT_UYVY8_2X8
+static const TUint32 KPixFmtSbggr8 = 0x31384142;		// v4l2_fourcc('B','A','8','1')
+static const TUint32 KMbusSbggr8_1x8 = 0x3001;		// MEDIA_BUS_FMT_SBGGR8_1X8
 static const TInt KBuffers = 3;
 
 // ---- the worker ----
@@ -32,7 +34,8 @@ public:
 	static TInt ThreadFn(TAny* aSelf) { return ((TWorker*)aSelf)->Loop(); }
 	TInt Loop();
 	// command arguments / results
-	TInt iUnit, iWidth, iHeight, iBuffers, iIndex, iValue;
+	TInt iUnit, iWidth, iHeight, iBuffers, iIndex, iValue, iFps;
+	TBool iRaw;
 	TUint32 iCtrlId;
 	TPheCamFormat iFormat;
 	TPheCamCtrlInfo iCtrlInfo;
@@ -97,7 +100,7 @@ TInt TWorker::Loop()
 			case EConfigure:
 				{
 				unsigned int bpl = 0, size = 0;
-				r = phe_camera_configure(iUnit, iWidth, iHeight, KPixFmtUyvy, KMbusUyvy8_2x8, &bpl, &size);
+				r = phe_camera_configure(iUnit, iWidth, iHeight, iRaw ? KPixFmtSbggr8 : KPixFmtUyvy, iRaw ? KMbusSbggr8_1x8 : KMbusUyvy8_2x8, iFps, &bpl, &size);
 				if (r == 0)
 					{
 					User::Free(iFrame);
@@ -233,7 +236,9 @@ void CPheCamSession::ServiceL(const RMessage2& aMessage)
 		case EPheCamConfigure:
 			{
 			Worker.iUnit = aMessage.Int0();
-			Worker.iWidth = aMessage.Int1();
+			Worker.iWidth = aMessage.Int1() & 0xFFFF;
+			Worker.iRaw = (aMessage.Int1() & KPheCamConfigureRaw) != 0;
+			Worker.iFps = (aMessage.Int1() >> 17) & 0xFF;
 			Worker.iHeight = aMessage.Int2();
 			TInt r = Worker.Run(TWorker::EConfigure);
 			if (r == KErrNone)

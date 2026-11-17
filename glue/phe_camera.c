@@ -84,7 +84,7 @@ static int set_pad_format(struct v4l2_subdev *sd, unsigned int pad, struct v4l2_
 }
 
 int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint32_t pixelformat, uint32_t mbus_code,
-	unsigned int *bytesperline, unsigned int *sizeimage)
+	unsigned int fps, unsigned int *bytesperline, unsigned int *sizeimage)
 {
 	const struct v4l2_ioctl_ops *ops = csi->capture.video_dev.ioctl_ops;
 	struct v4l2_mbus_framefmt mf = { .width = width, .height = height, .code = mbus_code, .field = V4L2_FIELD_NONE };
@@ -100,6 +100,15 @@ int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint
 		return -ENODEV;
 	if ((r = set_pad_format(sensor, 0, &mf)) != 0)
 		return r;
+	if (fps) {
+		/* VIDIOC_SUBDEV_S_FRAME_INTERVAL, as Megapixels sets its capture-rate: OV5640 2592x1944 is 15 fps at most */
+		struct v4l2_subdev_state *state = v4l2_subdev_lock_and_get_active_state(sensor);
+		struct v4l2_subdev_frame_interval fi = { .pad = 0, .which = V4L2_SUBDEV_FORMAT_ACTIVE, .interval = { 1, fps } };
+		int e = v4l2_subdev_call(sensor, pad, set_frame_interval, state, &fi);
+		if (state)
+			v4l2_subdev_unlock_state(state);
+		shim_log("camera-a64: frame interval %u fps -> %d (now 1/%u)", fps, e, fi.interval.denominator);
+	}
 	if ((r = set_pad_format(&csi->bridge.subdev, SUN6I_CSI_BRIDGE_PAD_SINK, &mf)) != 0)
 		return r;
 	fmt.fmt.pix.width = mf.width;

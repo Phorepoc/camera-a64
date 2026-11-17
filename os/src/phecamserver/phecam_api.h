@@ -29,6 +29,9 @@ enum TPheCamOp
 
 // iRotation: the sensor's V4L2_CID_CAMERA_SENSOR_ROTATION (from the DT "rotation" property): the correction, in degrees
 // counter-clockwise, a consumer applies to captured images to show them upright (PinePhone: rear 270, front 90)
+// EPheCamConfigure slot 1: the width in bits 0-15, KPheCamConfigureRaw, the frame rate in bits 17-24
+const TInt KPheCamConfigureRaw = 1 << 16;
+
 struct TPheCamFormat { TInt iWidth, iHeight, iBytesPerLine, iSizeImage, iRotation; };
 
 // struct v4l2_queryctrl, the fields a client needs; iMenuSkipMask: bit n set = menu item n not offered
@@ -75,10 +78,11 @@ public:
 		return r == KErrNone ? CreateSession(KPheCamServerName, TVersion(1, 0, 0), 2) : r;
 		}
 	inline TInt Count() { return SendReceive(EPheCamCount); }
-	inline TInt Configure(TInt aUnit, TInt aWidth, TInt aHeight, TPheCamFormat& aFormat)
+	// aRaw: 8-bit BGGR Bayer (V4L2 BA81) instead of UYVY; aFps: the sensor frame rate (0 = leave it)
+	inline TInt Configure(TInt aUnit, TInt aWidth, TInt aHeight, TPheCamFormat& aFormat, TBool aRaw = EFalse, TInt aFps = 0)
 		{
 		TPckg<TPheCamFormat> f(aFormat);
-		return SendReceive(EPheCamConfigure, TIpcArgs(aUnit, aWidth, aHeight, &f));
+		return SendReceive(EPheCamConfigure, TIpcArgs(aUnit, (aWidth & 0xFFFF) | (aRaw ? KPheCamConfigureRaw : 0) | ((aFps & 0xFF) << 17), aHeight, &f));
 		}
 	inline TInt Start(TInt aBuffers = 0) { return SendReceive(EPheCamStart, TIpcArgs(aBuffers)); }
 	inline TInt Stop(TBool aKeepPower = EFalse) { return SendReceive(EPheCamStop, TIpcArgs(aKeepPower)); }	// aKeepPower: the sensor stays on until the next Start (a mode switch)
