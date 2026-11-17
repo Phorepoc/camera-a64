@@ -70,7 +70,8 @@ extern "C" void shim_log(const char *fmt, ...)
 
 // ---- locks: struct mutex / struct spinlock { void *k; } hold an RMutex / RFastLock on the shared heap ----
 struct mutex { void *k; };
-struct spinlock { void *k; };
+struct spinlock { void *k; volatile unsigned owner; const char *site; int line; };
+extern "C" void shim_spin_lock_at(struct spinlock *l, const char *site, int line);
 
 extern "C" void shim_mutex_init(struct mutex *m)
 	{
