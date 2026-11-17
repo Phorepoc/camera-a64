@@ -154,7 +154,8 @@ void CTestCamAdvSet::ConstructL()
 	RDebug::Printf("PH: camera-a64: plug-in advanced settings: autofocus %d, EV step %d (%d..%d)", iPheHasAf, iPheEvStep,
 		-iPheEvDefault, iPheEvMax - iPheEvDefault);
 	iSupportedISORates.Reset();
-	iSupportedISORates.AppendL(KDefaultIsoRate);
+	// no ISO setting: both sensors run their own gain (auto exposure); an empty list makes GetSupportedIsoRatesL and
+	// SetISORate answer KErrNotSupported (round 14). Manual gain stays on MPheCameraControls.
 	
 	iSupportedApertures.Reset();
 	iSupportedApertures.AppendL(KDefaultAperture);
@@ -405,7 +406,9 @@ TInt CTestCamAdvSet::IsoRate() const
 void CTestCamAdvSet::SetIsoRate(TInt aRate)
 	{
 	TInt eventError = KErrNone;
-	if(iSupportedISORates.Find(aRate) == KErrNotFound)
+	if(iSupportedISORates.Count() == 0)
+		eventError = KErrNotSupported;
+	else if (iSupportedISORates.Find(aRate) == KErrNotFound)
 		{
 		eventError = KErrECamParameterNotInRange;
 		}
@@ -424,7 +427,7 @@ void CTestCamAdvSet::SetIsoRate(TInt aRate)
 
 void CTestCamAdvSet::GetSupportedISORateTypeL(TInt& aSupportedISORateTypes) const
 	{
-	aSupportedISORateTypes = KSupportedISORateTypes;	
+	aSupportedISORateTypes = iSupportedISORates.Count() ? KSupportedISORateTypes : 0;	
 	}
 		
 void CTestCamAdvSet::SetISORate(CCamera::CCameraAdvancedSettings::TISORateType aISORateType, TInt aParam)

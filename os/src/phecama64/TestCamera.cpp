@@ -895,6 +895,15 @@ TAny* CTestCamera::CustomInterface(TUid aInterface)
 
 void CTestCamera::CustomInterfaceL(TAny*& aIface, TUid aInterface)
 	{
+	// OURS: no snapshot, presets or image processing on the camera server (the template's test implementations drew
+	// synthetic data): no interface, so CCameraSnapshot::NewL, CCameraPresets::NewL and CCameraImageProcessing::NewL
+	// leave KErrNotSupported cleanly (round 14). Their classes stay for the template's own paths.
+	if (aInterface.iUid == KECamMCameraSnapshotUidValue || aInterface.iUid == KECamMCameraPresetsUidValue ||
+		aInterface.iUid == KECamMCameraImageProcessingUidValue || aInterface.iUid == KECamMCameraImageProcessing2UidValue)
+		{
+		aIface = NULL;
+		return;
+		}
 	switch(aInterface.iUid)
 		{
 		// advanced settings interface pointers
@@ -1596,6 +1605,8 @@ void CTestCamera::PheInitL()
 		RDebug::Printf("PH: camera-a64: plug-in camera %d unavailable (%d)", iCameraIndex, err);
 		return;
 		}
+	// the server's unit 1 is the front camera: apps mirror a camera that faces the user (TCameraInfo, round 14)
+	iInfo.iOrientation = iCameraIndex == 1 ? TCameraInfo::EOrientationInwards : TCameraInfo::EOrientationOutwards;
 	// ECam lists capture sizes largest first
 	const RArray<TSize>& sizes = iPheSource->StillSizes();
 	iImageSizes.Reset();
