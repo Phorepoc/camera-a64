@@ -60,7 +60,9 @@ TInt TWorker::Loop()
 		{
 		if (iStreaming)
 			{
-			if (iCmdSem.Wait(0) != KErrNone)	// no command: one frame
+			// no command pending: one frame. (Not iCmdSem.Wait(0): an EKA2 semaphore timeout of 0 means "no timeout",
+			// so the worker blocked there for good and never dequeued a frame.)
+			if (iCmdSem.Count() <= 0)
 				{
 				TInt n = phe_camera_next_frame(iFrame, iFrameSize);
 				iLock.Wait();
@@ -73,6 +75,7 @@ TInt TWorker::Loop()
 				iLock.Signal();
 				continue;
 				}
+			iCmdSem.Wait();
 			}
 		else
 			iCmdSem.Wait();
