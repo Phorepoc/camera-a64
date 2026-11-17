@@ -231,7 +231,7 @@ extern "C" int phe_hw_clk_enable(unsigned int id, int on)
 extern "C" unsigned long phe_hw_clk_get_rate(unsigned int id) { TUint32 hz = 0; Hw.ClockRate(id, hz); return hz; }
 extern "C" int phe_hw_clk_set_rate(unsigned int id, unsigned long rate)
 	{
-	RDebug::Printf("PH: camera-a64: hw %u ms clk %u rate %lu", Ms(), id, rate);
+	RDebug::Printf("PH: camera-a64: hw %u ms clk %u rate %u", Ms(), id, (TUint)rate);
 	return Hw.SetClockRate(id, rate) == KErrNone ? 0 : -22;
 	}
 extern "C" int phe_hw_reset(unsigned int id, int assert) { return Hw.Reset(id, assert) == KErrNone ? 0 : -22; }

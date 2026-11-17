@@ -499,9 +499,17 @@ struct regmap *devm_regmap_init_mmio_clk(struct device *dev, const char *clk_id,
 	const struct regmap_config *config)
 {
 	struct regmap *m = shim_zalloc(sizeof(*m));
-	(void)dev; (void)clk_id;
 	if (!m)
 		return ERR_PTR(-ENOMEM);
+	/* Linux regmap-mmio gets clk_id and enables it around every access; without it a
+	 * bus-gated block (CSI: CCU 0x64 bit 8) drops every write. We enable it once, here. */
+	if (clk_id) {
+		struct clk *c = devm_clk_get(dev, clk_id);
+		if (IS_ERR(c))
+			return ERR_CAST(c);
+		if (clk_prepare_enable(c))
+			return ERR_PTR(-EIO);
+	}
 	m->base = regs;
 	m->max = config ? config->max_register : 0;
 	return m;
