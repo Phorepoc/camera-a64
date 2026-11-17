@@ -89,7 +89,7 @@ int phe_kstrtou16(const char *s, unsigned int base, u16 *res)
 	return 0;
 }
 
-void *phe_krealloc(void *p, size_t n) { (void)p; (void)n; return NULL; }	/* no caller on our paths */
+void *phe_krealloc(void *p, size_t n) { return shim_realloc(p, n); }	/* media_pipeline_start grows its walk stack */
 
 unsigned long bitmap_find_next_zero_area(unsigned long *map, unsigned long size, unsigned long start,
 	unsigned int nr, unsigned long align_mask)

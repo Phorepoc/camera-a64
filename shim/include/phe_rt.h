@@ -19,6 +19,7 @@ struct mutex; struct spinlock; struct completion; struct work_struct; struct del
 void *shim_alloc(size_t n);
 void *shim_zalloc(size_t n);
 void shim_free(void *p);
+void *shim_realloc(void *p, size_t n);
 void *shim_memdup(const void *s, size_t n);
 int shim_memcmp(const void *a, const void *b, size_t n);
 size_t shim_strlen(const char *s);

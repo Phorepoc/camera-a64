@@ -269,19 +269,19 @@ int platform_get_irq(struct platform_device *pdev, unsigned int num);
 void __iomem *devm_platform_ioremap_resource(struct platform_device *pdev, unsigned int index);
 int platform_driver_register(struct platform_driver *drv);
 void platform_driver_unregister(struct platform_driver *drv);
-/* module_*_driver / module_init: a table the glue walks instead of initcalls (section phe_drivers / phe_initcalls) */
+/* module_*_driver / module_init: global entries (__phe_drv_* / __phe_init_*) that recipes/build.sh lists, in link
+ * order, into a generated table (phe_tables.c) the glue walks instead of initcalls. Not linker sections: an E32
+ * image carries only .text and .data, so a custom section's bytes (and relocations) would be lost. */
 struct phe_driver_entry { int kind; const void *drv; };
 #define PHE_DRV_PLATFORM 1
 #define PHE_DRV_I2C 2
-/* not const: a writable section lands beside .data, inside the image's data range (a read-only orphan section
- * sits between .text and .data, where the E32 image has no segment for it) */
 #define phe_register_driver(kind, d) \
-	static struct phe_driver_entry __phe_drv_##d __attribute__((used, section("phe_drivers"))) = { kind, &(d) }
+	const struct phe_driver_entry __phe_drv_##d __attribute__((used)) = { kind, &(d) }
 #define module_platform_driver(d) phe_register_driver(PHE_DRV_PLATFORM, d)
 #define module_i2c_driver(d) phe_register_driver(PHE_DRV_I2C, d)
 #undef module_init
 #undef module_exit
-#define module_init(f) static int (*__phe_init_##f)(void) __attribute__((used, section("phe_initcalls"))) = f
+#define module_init(f) int (*const __phe_init_##f)(void) __attribute__((used)) = f
 #define module_exit(f) static void (*__phe_exit_##f)(void) __attribute__((used)) = f
 #define subsys_initcall(f) module_init(f)
 #define MODULE_ALIAS(x)

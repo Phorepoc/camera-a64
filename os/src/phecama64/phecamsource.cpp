@@ -32,7 +32,7 @@ void CPheCamSource::ConstructL(TInt aUnit)
 	User::LeaveIfError(iCam.Connect());
 	iConnected = ETrue;
 	TInt r = iCam.Configure(aUnit, KCamW, KCamH, iFmt);
-	RDebug::Printf("camera-a64: plug-in configure unit %d -> %d (%dx%d, %d bytes/line)", aUnit, r, iFmt.iWidth, iFmt.iHeight,
+	RDebug::Printf("PH: camera-a64: plug-in configure unit %d -> %d (%dx%d, %d bytes/line)", aUnit, r, iFmt.iWidth, iFmt.iHeight,
 		iFmt.iBytesPerLine);
 	User::LeaveIfError(r);
 	iFrame = HBufC8::NewL(iFmt.iSizeImage);
@@ -63,7 +63,7 @@ void CPheCamSource::RunL()
 	if (n >= iFmt.iBytesPerLine * iFmt.iHeight)
 		Convert(iBuf.Ptr());
 	else if (n < 0 && iLoggedErr++ < 3)
-		RDebug::Printf("camera-a64: plug-in NextFrame -> %d", n);
+		RDebug::Printf("PH: camera-a64: plug-in NextFrame -> %d", n);
 	if (n != KErrCancel && n != KErrServerTerminated)
 		Next();
 	}
@@ -94,5 +94,5 @@ void CPheCamSource::Convert(const TUint8* aUyvy)
 		}
 	iBitmap->UnlockHeap();
 	if (++iFrames <= 3)
-		RDebug::Printf("camera-a64: plug-in frame %d", iFrames);
+		RDebug::Printf("PH: camera-a64: plug-in frame %d", iFrames);
 	}

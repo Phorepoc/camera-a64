@@ -228,7 +228,7 @@ static TInt RunServerL()
 	t.SetPriority(EPriorityMore);
 	t.Resume();
 	TInt r = Worker.Run(TWorker::EProbe);
-	RDebug::Printf("camera-a64: probe %d, %d camera(s)", r, r == KErrNone ? phe_camera_count() : 0);
+	RDebug::Printf("PH: camera-a64: probe %d, %d camera(s)", r, r == KErrNone ? phe_camera_count() : 0);
 	User::LeaveIfError(r);
 
 	CActiveScheduler* as = new (ELeave) CActiveScheduler;

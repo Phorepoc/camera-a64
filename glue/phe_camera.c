@@ -114,15 +114,22 @@ int phe_camera_start(unsigned int nbufs)
 	struct v4l2_requestbuffers req = { .count = nbufs, .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
 	unsigned int i;
 	int r;
-	if ((r = vb2_reqbufs(&csi->capture.queue, &req)) != 0)
+	if ((r = vb2_reqbufs(&csi->capture.queue, &req)) != 0) {
+		shim_log("camera-a64: start: reqbufs %u -> %d", nbufs, r);
 		return r;
+	}
 	for (i = 0; i < req.count; ++i) {
 		struct v4l2_buffer b = { .index = i, .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
-		if ((r = vb2_qbuf(&csi->capture.queue, csi->media_dev, &b)) != 0)
+		if ((r = vb2_qbuf(&csi->capture.queue, csi->media_dev, &b)) != 0) {
+			shim_log("camera-a64: start: qbuf %u -> %d", i, r);
 			return r;
+		}
 	}
-	if ((r = vb2_streamon(&csi->capture.queue, V4L2_BUF_TYPE_VIDEO_CAPTURE)) != 0)
+	if ((r = vb2_streamon(&csi->capture.queue, V4L2_BUF_TYPE_VIDEO_CAPTURE)) != 0) {
+		shim_log("camera-a64: start: streamon -> %d", r);
 		return r;
+	}
+	shim_log("camera-a64: start: %u buffers, streaming", req.count);
 	streaming = 1;
 	return 0;
 }

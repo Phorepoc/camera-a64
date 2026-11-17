@@ -31,12 +31,31 @@ TInt PheHwOpen()
 	}
 
 // ---- memory, logging ----
-extern "C" void *shim_alloc(size_t n) { return User::Alloc(n); }
-extern "C" void *shim_zalloc(size_t n) { return User::AllocZ(n); }
+extern "C" void *shim_alloc(size_t n)
+	{
+	void *p = User::Alloc(n);
+	if (!p)
+		RDebug::Printf("PH: camera-a64: alloc %u failed", (TUint)n);
+	return p;
+	}
+extern "C" void *shim_zalloc(size_t n)
+	{
+	void *p = User::AllocZ(n);
+	if (!p)
+		RDebug::Printf("PH: camera-a64: zalloc %u failed", (TUint)n);
+	return p;
+	}
 extern "C" void shim_free(void *p) { User::Free(p); }
+extern "C" void *shim_realloc(void *p, size_t n)
+	{
+	void *q = User::ReAlloc(p, n);
+	if (!q && n)
+		RDebug::Printf("PH: camera-a64: realloc %u failed", (TUint)n);
+	return q;
+	}
 extern "C" void shim_panic(const char *what)
 	{
-	RDebug::Printf("camera-a64: panic: %s", what);
+	RDebug::Printf("PH: camera-a64: panic: %s", what);
 	User::Panic(_L("camera-a64"), 0);
 	}
 extern "C" void shim_log(const char *fmt, ...)
@@ -46,7 +65,7 @@ extern "C" void shim_log(const char *fmt, ...)
 	va_start(ap, fmt);
 	shim_vsnprintf(buf, sizeof(buf), fmt, ap);
 	va_end(ap);
-	RDebug::Printf("%s", buf);
+	RDebug::Printf("PH: %s", buf);	// the phone kernel forwards only "PH:" lines
 	}
 
 // ---- locks: struct mutex / struct spinlock { void *k; } hold an RMutex / RFastLock on the shared heap ----
@@ -141,12 +160,17 @@ extern "C" void *phe_hw_dma_alloc(size_t size, uint32_t *phys)
 		if (DmaBufs[i].iVirt)
 			continue;
 		TUint32 pa = 0;
-		if (Hw.AllocDma(DmaBufs[i].iChunk, (TUint32)size, pa) != KErrNone)
+		TInt r = Hw.AllocDma(DmaBufs[i].iChunk, (TUint32)size, pa);
+		if (r != KErrNone)
+			{
+			RDebug::Printf("PH: camera-a64: dma alloc %u -> %d", (TUint)size, r);
 			return NULL;
+			}
 		DmaBufs[i].iVirt = DmaBufs[i].iChunk.Base();
 		*phys = pa;
 		return DmaBufs[i].iVirt;
 		}
+	RDebug::Printf("PH: camera-a64: dma alloc %u: all 16 slots used", (TUint)size);
 	return NULL;
 	}
 extern "C" void phe_hw_dma_free(void *virt, size_t, uint32_t)
