@@ -25,6 +25,9 @@ static struct inode cam_inode;
 static struct file cam_file;
 static struct v4l2_fh cam_fh;
 static int streaming;
+static struct v4l2_subdev *cur_sensor;	/* the sensor the last configure linked */
+static struct device *held;		/* a runtime-PM reference kept across a stop (phe_camera_stop(1)) */
+static void release_hold(void);
 
 int phe_camera_init(void)
 {
@@ -92,6 +95,7 @@ int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint
 	if (streaming)
 		return -EBUSY;
 	sensor = select_sensor(unit);
+	cur_sensor = sensor;
 	if (!sensor)
 		return -ENODEV;
 	if ((r = set_pad_format(sensor, 0, &mf)) != 0)
@@ -130,7 +134,7 @@ static int locked_qbuf(struct v4l2_buffer *b)
 
 /* bring-up readback: the sensor registers that decide whether a DVP frame leaves the chip (OV5640 datasheet: 0x3008
  * system control, 0x300e MIPI/DVP select, 0x3017/0x3018 pad output enables, 0x4740 DVP polarity, 0x4300 format) */
-static void dump_sensor(unsigned int unit)
+static void __maybe_unused dump_sensor(unsigned int unit)
 {
 	/* + AEC/AGC (datasheet ch. 4.6): 0x3503 manual bits, 0x3a0f/10/1b/1e/11/1f stable/fast windows, 0x56a1 average
 	 * luminance, 0x3500-02 exposure, 0x350a/b gain; 0x3406 AWB manual, 0x5001 ISP enables */
@@ -173,8 +177,8 @@ int phe_camera_start(unsigned int nbufs)
 		return r;
 	}
 	shim_log("camera-a64: start: %u buffers, streaming", req.count);
-	dump_sensor(0);
 	streaming = 1;
+	release_hold();
 	return 0;
 }
 
@@ -189,16 +193,27 @@ int phe_camera_next_frame(void *dst, unsigned int len)
 		return -EINVAL;
 	{
 		static unsigned int calls;
-		if (calls == 299)
-			dump_sensor(0);		/* again after ~10 s of streaming: has the AEC moved? */
 		if (++calls <= 3)
 			shim_log("camera-a64: next_frame #%u: dqbuf (streaming %d, done list %s, owned by driver %u, queued %u)", calls,
 				csi->capture.state.streaming, list_empty(&csi->capture.queue.done_list) ? "empty" : "has buffers",
 				atomic_read(&csi->capture.queue.owned_by_drv_count), csi->capture.queue.queued_count);
 	}
-	mutex_lock(&csi->capture.lock);
-	r = vb2_dqbuf(&csi->capture.queue, &b, false);
-	mutex_unlock(&csi->capture.lock);
+	/* polled, not a blocking dqbuf: a mode the parallel bus cannot carry sends no frame at all, and the server's
+	 * worker must still see its next command (a Stop) -- -EAGAIN after ~200 ms without a frame */
+	{
+		unsigned int waited = 0;
+		for (;;) {
+			mutex_lock(&csi->capture.lock);
+			r = vb2_dqbuf(&csi->capture.queue, &b, true);
+			mutex_unlock(&csi->capture.lock);
+			if (r != -EAGAIN || waited >= 200)
+				break;
+			msleep(2);
+			waited += 2;
+		}
+	}
+	if (r == -EAGAIN)
+		return r;
 	if (r != 0) {
 		shim_log("camera-a64: next_frame: dqbuf -> %d", r);
 		return r;
@@ -210,11 +225,29 @@ int phe_camera_next_frame(void *dst, unsigned int len)
 	return r ? r : (int)n;
 }
 
-int phe_camera_stop(void)
+static void release_hold(void)
+{
+	if (held) {
+		pm_runtime_put(held);
+		held = NULL;
+	}
+}
+
+/* keep_power: keep the sensor powered until the next start (or a plain stop), as Linux's 1 s runtime-PM
+ * autosuspend does across Megapixels' viewfinder -> still mode switch; our shim suspends at once, and an
+ * OV5640 powered up again ~100 ms after power-off NAKs its first write (reg 3008) */
+int phe_camera_stop(int keep_power)
 {
 	struct v4l2_requestbuffers req = { .count = 0, .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
+	if (!keep_power)
+		release_hold();
 	if (!streaming)
 		return 0;
+	if (keep_power && !held && cur_sensor) {
+		struct i2c_client *c = v4l2_get_subdevdata(cur_sensor);
+		if (c && pm_runtime_get_sync(&c->dev) >= 0)
+			held = &c->dev;
+	}
 	streaming = 0;
 	mutex_lock(&csi->capture.lock);
 	vb2_streamoff(&csi->capture.queue, V4L2_BUF_TYPE_VIDEO_CAPTURE);
@@ -234,4 +267,63 @@ int phe_camera_ctrl(int unit, uint32_t id, int32_t value)
 	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
 	struct v4l2_ctrl *c = sd ? v4l2_ctrl_find(sd->ctrl_handler, id) : NULL;
 	return c ? v4l2_ctrl_s_ctrl(c, value) : -EINVAL;
+}
+
+/* the sensor's frame sizes for a media-bus code (VIDIOC_SUBDEV_ENUM_FRAME_SIZE on its pad 0), as media-ctl lists them */
+int phe_camera_enum_size(int unit, unsigned int index, uint32_t mbus_code, unsigned int *width, unsigned int *height)
+{
+	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
+	struct v4l2_subdev_frame_size_enum fse = { .index = index, .pad = 0, .code = mbus_code,
+		.which = V4L2_SUBDEV_FORMAT_ACTIVE };
+	struct v4l2_subdev_state *state;
+	int r;
+	if (!sd)
+		return -ENODEV;
+	state = v4l2_subdev_lock_and_get_active_state(sd);
+	r = v4l2_subdev_call(sd, pad, enum_frame_size, state, &fse);
+	if (state)
+		v4l2_subdev_unlock_state(state);
+	if (r)
+		return r;
+	*width = fse.max_width;
+	*height = fse.max_height;
+	return 0;
+}
+
+int phe_camera_get_ctrl(int unit, uint32_t id, int32_t *value)
+{
+	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
+	struct v4l2_ctrl *c = sd ? v4l2_ctrl_find(sd->ctrl_handler, id) : NULL;
+	if (!c)
+		return -EINVAL;
+	*value = v4l2_ctrl_g_ctrl(c);
+	return 0;
+}
+
+/* VIDIOC_QUERYCTRL (+ the menu skip mask VIDIOC_QUERYMENU walks) */
+int phe_camera_query_ctrl(int unit, uint32_t id, struct phe_camera_ctrl_info *info)
+{
+	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
+	struct v4l2_ctrl *c = sd ? v4l2_ctrl_find(sd->ctrl_handler, id) : NULL;
+	if (!c)
+		return -EINVAL;
+	info->type = c->type;
+	info->minimum = (int32_t)c->minimum;
+	info->maximum = (int32_t)c->maximum;
+	info->step = (int32_t)c->step;
+	info->def = (int32_t)c->default_value;
+	info->menu_skip_mask = (uint32_t)c->menu_skip_mask;
+	info->flags = c->flags;
+	return 0;
+}
+
+/* an integer menu's item value (VIDIOC_QUERYMENU .value), e.g. V4L2_CID_AUTO_EXPOSURE_BIAS in milli-EV */
+int phe_camera_menu_value(int unit, uint32_t id, unsigned int index, int64_t *value)
+{
+	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
+	struct v4l2_ctrl *c = sd ? v4l2_ctrl_find(sd->ctrl_handler, id) : NULL;
+	if (!c || c->type != V4L2_CTRL_TYPE_INTEGER_MENU || index > c->maximum || (c->menu_skip_mask & BIT_ULL(index)))
+		return -EINVAL;
+	*value = c->qmenu_int[index];
+	return 0;
 }

@@ -27,13 +27,15 @@ static const TInt KBuffers = 3;
 class TWorker
 	{
 public:
-	enum TCmd { ENone, EProbe, EConfigure, EStart, EStop, EQuit };
+	enum TCmd { ENone, EProbe, EConfigure, EStart, EStop, EQuit, EEnumSize, ESetCtrl, EGetCtrl, EQueryCtrl, EMenuValue };
 	TInt Run(TCmd aCmd);			// server thread: run a command on the worker, wait for its result
 	static TInt ThreadFn(TAny* aSelf) { return ((TWorker*)aSelf)->Loop(); }
 	TInt Loop();
 	// command arguments / results
-	TInt iUnit, iWidth, iHeight;
+	TInt iUnit, iWidth, iHeight, iBuffers, iIndex, iValue;
+	TUint32 iCtrlId;
 	TPheCamFormat iFormat;
+	TPheCamCtrlInfo iCtrlInfo;
 	// frame hand-over
 	RFastLock iLock;
 	RMessage2 iFrameMsg;
@@ -67,6 +69,8 @@ TInt TWorker::Loop()
 			if (!iCmdPending)
 				{
 				TInt n = phe_camera_next_frame(iFrame, iFrameSize);
+				if (n == -11)	// -EAGAIN: no frame within the poll window; look at the commands again (a Stop must get through)
+					continue;
 				iLock.Wait();
 				if (iFrameWanted)
 					{
@@ -111,16 +115,59 @@ TInt TWorker::Loop()
 				break;
 				}
 			case EStart:
-				r = !iFrame ? KErrNotReady : phe_camera_start(KBuffers) < 0 ? KErrGeneral : KErrNone;
+				r = !iFrame ? KErrNotReady : phe_camera_start(iBuffers > 0 ? iBuffers : KBuffers) < 0 ? KErrNoMemory : KErrNone;
 				iStreaming = (r == KErrNone);
 				break;
+			case EEnumSize:
+				{
+				unsigned int w = 0, h = 0;
+				r = phe_camera_enum_size(iUnit, iIndex, KMbusUyvy8_2x8, &w, &h) < 0 ? KErrNotFound : KErrNone;
+				iWidth = w;
+				iHeight = h;
+				break;
+				}
+			case ESetCtrl:
+				{
+				const int e = phe_camera_ctrl(iUnit, iCtrlId, iValue);
+				r = e == 0 ? KErrNone : e == -22 || e == -34 ? KErrArgument : KErrGeneral;
+				if (e)
+					RDebug::Printf("PH: camera-a64: s_ctrl unit %d id %08x = %d -> %d", iUnit, iCtrlId, iValue, e);
+				break;
+				}
+			case EGetCtrl:
+				{
+				int32_t v = 0;
+				r = phe_camera_get_ctrl(iUnit, iCtrlId, &v) < 0 ? KErrNotSupported : KErrNone;
+				iValue = v;
+				break;
+				}
+			case EMenuValue:
+				{
+				int64_t v = 0;
+				r = phe_camera_menu_value(iUnit, iCtrlId, iIndex, &v) < 0 ? KErrNotSupported : KErrNone;
+				iValue = (TInt)v;
+				break;
+				}
+			case EQueryCtrl:
+				{
+				struct phe_camera_ctrl_info i;
+				r = phe_camera_query_ctrl(iUnit, iCtrlId, &i) < 0 ? KErrNotSupported : KErrNone;
+				iCtrlInfo.iType = i.type;
+				iCtrlInfo.iFlags = i.flags;
+				iCtrlInfo.iMenuSkipMask = i.menu_skip_mask;
+				iCtrlInfo.iMinimum = i.minimum;
+				iCtrlInfo.iMaximum = i.maximum;
+				iCtrlInfo.iStep = i.step;
+				iCtrlInfo.iDefault = i.def;
+				break;
+				}
 			case EStop:
 				iStreaming = EFalse;
-				phe_camera_stop();
+				phe_camera_stop(iValue);
 				break;
 			case EQuit:
 				iStreaming = EFalse;
-				phe_camera_stop();
+				phe_camera_stop(0);
 				iResult = KErrNone;
 				iDoneSem.Signal();
 				return KErrNone;
@@ -171,6 +218,7 @@ CPheCamSession::~CPheCamSession()
 		Worker.iFrameMsg.Complete(KErrCancel);
 		}
 	Worker.iLock.Signal();
+	Worker.iValue = 0;
 	Worker.Run(TWorker::EStop);
 	((CPheCamServer*)Server())->SessionClosed();
 	}
@@ -196,8 +244,60 @@ void CPheCamSession::ServiceL(const RMessage2& aMessage)
 			aMessage.Complete(r);
 			return;
 			}
-		case EPheCamStart: aMessage.Complete(Worker.Run(TWorker::EStart)); return;
-		case EPheCamStop: aMessage.Complete(Worker.Run(TWorker::EStop)); return;
+		case EPheCamStart:
+			Worker.iBuffers = aMessage.Int0();
+			aMessage.Complete(Worker.Run(TWorker::EStart));
+			return;
+		case EPheCamEnumSize:
+			{
+			Worker.iUnit = aMessage.Int0();
+			Worker.iIndex = aMessage.Int1();
+			TInt r = Worker.Run(TWorker::EEnumSize);
+			if (r == KErrNone)
+				{
+				TSize s(Worker.iWidth, Worker.iHeight);
+				TPckgC<TSize> p(s);
+				r = aMessage.Write(2, p);
+				}
+			aMessage.Complete(r);
+			return;
+			}
+		case EPheCamSetCtrl:
+			Worker.iUnit = aMessage.Int0();
+			Worker.iCtrlId = (TUint32)aMessage.Int1();
+			Worker.iValue = aMessage.Int2();
+			aMessage.Complete(Worker.Run(TWorker::ESetCtrl));
+			return;
+		case EPheCamGetCtrl:
+		case EPheCamMenuValue:
+			{
+			const TBool menu = aMessage.Function() == EPheCamMenuValue;
+			Worker.iUnit = aMessage.Int0();
+			Worker.iCtrlId = (TUint32)aMessage.Int1();
+			Worker.iIndex = menu ? aMessage.Int2() : 0;
+			TInt r = Worker.Run(menu ? TWorker::EMenuValue : TWorker::EGetCtrl);
+			if (r == KErrNone)
+				{
+				TPckgC<TInt> p(Worker.iValue);
+				r = aMessage.Write(menu ? 3 : 2, p);
+				}
+			aMessage.Complete(r);
+			return;
+			}
+		case EPheCamQueryCtrl:
+			{
+			Worker.iUnit = aMessage.Int0();
+			Worker.iCtrlId = (TUint32)aMessage.Int1();
+			TInt r = Worker.Run(TWorker::EQueryCtrl);
+			if (r == KErrNone)
+				{
+				TPckgC<TPheCamCtrlInfo> p(Worker.iCtrlInfo);
+				r = aMessage.Write(2, p);
+				}
+			aMessage.Complete(r);
+			return;
+			}
+		case EPheCamStop: Worker.iValue = aMessage.Int0() != 0; aMessage.Complete(Worker.Run(TWorker::EStop)); return;
 		case EPheCamNextFrame:
 			Worker.iLock.Wait();
 			if (Worker.iFrameWanted)
