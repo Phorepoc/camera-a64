@@ -396,16 +396,16 @@ struct mutex { void *k; };
 #define lockdep_assert_held(m) ((void)0)
 #define lockdep_assert_wiphy(w) ((void)0)
 #define lockdep_is_held(m) 1
-typedef struct spinlock { void *k; volatile unsigned owner; const char *site; int line; } spinlock_t;
+typedef struct spinlock { void *k; } spinlock_t;
 #define DEFINE_SPINLOCK(l) spinlock_t l = { 0 }
 #define spin_lock_init(l) shim_spin_init(l)
-#define spin_lock(l) shim_spin_lock_at(l, __func__, __LINE__)
+#define spin_lock(l) shim_spin_lock(l)
 #define spin_unlock(l) shim_spin_unlock(l)
-#define spin_lock_bh(l) shim_spin_lock_at(l, __func__, __LINE__)
+#define spin_lock_bh(l) shim_spin_lock(l)
 #define spin_unlock_bh(l) shim_spin_unlock(l)
-#define spin_lock_irq(l) shim_spin_lock_at(l, __func__, __LINE__)
+#define spin_lock_irq(l) shim_spin_lock(l)
 #define spin_unlock_irq(l) shim_spin_unlock(l)
-#define spin_lock_irqsave(l, flags) do { (flags) = 0; shim_spin_lock_at(l, __func__, __LINE__); } while (0)
+#define spin_lock_irqsave(l, flags) do { (flags) = 0; shim_spin_lock(l); } while (0)
 #define spin_unlock_irqrestore(l, flags) do { (void)(flags); shim_spin_unlock(l); } while (0)
 #define rcu_read_lock() ((void)0)
 #define rcu_read_unlock() ((void)0)

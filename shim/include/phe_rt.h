@@ -43,7 +43,6 @@ int shim_mutex_trylock(struct mutex *m);
 int shim_mutex_is_locked(struct mutex *m);
 void shim_spin_init(struct spinlock *l);
 void shim_spin_lock(struct spinlock *l);
-void shim_spin_lock_at(struct spinlock *l, const char *site, int line);
 void shim_spin_unlock(struct spinlock *l);
 void shim_completion_init(struct completion *c);
 void shim_completion_reinit(struct completion *c);

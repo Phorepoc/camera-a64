@@ -102,25 +102,8 @@ extern "C" void shim_spin_init(struct spinlock *l)
 	l->k = x;
 	}
 static RFastLock &S(struct spinlock *l) { if (!l->k) shim_spin_init(l); return *(RFastLock *)l->k; }
-extern "C" void shim_spin_lock(struct spinlock *l) { shim_spin_lock_at(l, "?", 0); }
-// contention trace (camera bring-up): who holds a spinlock another thread waits for, by call site
-extern "C" void shim_spin_lock_at(struct spinlock *l, const char *site, int line)
-	{
-	static TInt said;
-	const TUint me = (TUint)RThread().Id();
-	const TUint holder = l->owner;
-	if (holder && said < 40)
-		{
-		++said;
-		RDebug::Printf("PH: camera-a64: spin %08x wanted by T%u at %s:%d, held by T%u since %s:%d", (TUint)l, me, site, line, holder,
-			l->site ? l->site : "?", l->line);
-		}
-	S(l).Wait();
-	l->owner = me;
-	l->site = site;
-	l->line = line;
-	}
-extern "C" void shim_spin_unlock(struct spinlock *l) { l->owner = 0; S(l).Signal(); }
+extern "C" void shim_spin_lock(struct spinlock *l) { S(l).Wait(); }
+extern "C" void shim_spin_unlock(struct spinlock *l) { S(l).Signal(); }
 
 // ---- time ----
 static TUint32 FastHz()
@@ -220,8 +203,6 @@ static TInt IrqThread(TAny *)
 			RDebug::Printf("PH: camera-a64: irq wait -> %d: the irq thread stops", s.Int());
 			return s.Int();
 			}
-		if (IrqCount < 3)
-			RDebug::Printf("PH: camera-a64: irq %d enter T%u", IrqNo, (TUint)RThread().Id());
 		const int handled = IrqIsr(IrqNo, IrqCtx);
 		if (++IrqCount <= 3 || IrqCount % 100 == 0)
 			RDebug::Printf("PH: camera-a64: irq %d #%d handled %d", IrqNo, IrqCount, handled);
