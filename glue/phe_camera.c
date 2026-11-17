@@ -109,6 +109,25 @@ int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint
 	return 0;
 }
 
+/* video_ioctl2() holds the video device's lock (= the vb2 queue's lock, &capture->lock) around every ioctl; vb2 relies on
+ * it (wait_prepare/wait_finish drop and retake it while a DQBUF blocks), so our direct calls take it too */
+static int locked_reqbufs(struct v4l2_requestbuffers *req)
+{
+	int r;
+	mutex_lock(&csi->capture.lock);
+	r = vb2_reqbufs(&csi->capture.queue, req);
+	mutex_unlock(&csi->capture.lock);
+	return r;
+}
+static int locked_qbuf(struct v4l2_buffer *b)
+{
+	int r;
+	mutex_lock(&csi->capture.lock);
+	r = vb2_qbuf(&csi->capture.queue, csi->media_dev, b);
+	mutex_unlock(&csi->capture.lock);
+	return r;
+}
+
 /* bring-up readback: the sensor registers that decide whether a DVP frame leaves the chip (OV5640 datasheet: 0x3008
  * system control, 0x300e MIPI/DVP select, 0x3017/0x3018 pad output enables, 0x4740 DVP polarity, 0x4300 format) */
 static void dump_sensor(unsigned int unit)
@@ -132,18 +151,21 @@ int phe_camera_start(unsigned int nbufs)
 	struct v4l2_requestbuffers req = { .count = nbufs, .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
 	unsigned int i;
 	int r;
-	if ((r = vb2_reqbufs(&csi->capture.queue, &req)) != 0) {
+	if ((r = locked_reqbufs(&req)) != 0) {
 		shim_log("camera-a64: start: reqbufs %u -> %d", nbufs, r);
 		return r;
 	}
 	for (i = 0; i < req.count; ++i) {
 		struct v4l2_buffer b = { .index = i, .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
-		if ((r = vb2_qbuf(&csi->capture.queue, csi->media_dev, &b)) != 0) {
+		if ((r = locked_qbuf(&b)) != 0) {
 			shim_log("camera-a64: start: qbuf %u -> %d", i, r);
 			return r;
 		}
 	}
-	if ((r = vb2_streamon(&csi->capture.queue, V4L2_BUF_TYPE_VIDEO_CAPTURE)) != 0) {
+	mutex_lock(&csi->capture.lock);
+	r = vb2_streamon(&csi->capture.queue, V4L2_BUF_TYPE_VIDEO_CAPTURE);
+	mutex_unlock(&csi->capture.lock);
+	if (r != 0) {
 		shim_log("camera-a64: start: streamon -> %d", r);
 		return r;
 	}
@@ -169,14 +191,17 @@ int phe_camera_next_frame(void *dst, unsigned int len)
 				csi->capture.state.streaming, list_empty(&csi->capture.queue.done_list) ? "empty" : "has buffers",
 				atomic_read(&csi->capture.queue.owned_by_drv_count), csi->capture.queue.queued_count);
 	}
-	if ((r = vb2_dqbuf(&csi->capture.queue, &b, false)) != 0) {
+	mutex_lock(&csi->capture.lock);
+	r = vb2_dqbuf(&csi->capture.queue, &b, false);
+	mutex_unlock(&csi->capture.lock);
+	if (r != 0) {
 		shim_log("camera-a64: next_frame: dqbuf -> %d", r);
 		return r;
 	}
 	vb = vb2_get_buffer(&csi->capture.queue, b.index);
 	n = min(len, b.bytesused);
 	memcpy(dst, vb2_plane_vaddr(vb, 0), n);
-	r = vb2_qbuf(&csi->capture.queue, csi->media_dev, &b);
+	r = locked_qbuf(&b);
 	return r ? r : (int)n;
 }
 
@@ -186,8 +211,10 @@ int phe_camera_stop(void)
 	if (!streaming)
 		return 0;
 	streaming = 0;
+	mutex_lock(&csi->capture.lock);
 	vb2_streamoff(&csi->capture.queue, V4L2_BUF_TYPE_VIDEO_CAPTURE);
-	return vb2_reqbufs(&csi->capture.queue, &req);
+	mutex_unlock(&csi->capture.lock);
+	return locked_reqbufs(&req);
 }
 
 int phe_camera_ctrl(int unit, uint32_t id, int32_t value)
