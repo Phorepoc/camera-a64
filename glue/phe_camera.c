@@ -162,8 +162,17 @@ int phe_camera_next_frame(void *dst, unsigned int len)
 	int r;
 	if (!streaming)
 		return -EINVAL;
-	if ((r = vb2_dqbuf(&csi->capture.queue, &b, false)) != 0)
+	{
+		static unsigned int calls;
+		if (++calls <= 3)
+			shim_log("camera-a64: next_frame #%u: dqbuf (streaming %d, done list %s, owned by driver %u, queued %u)", calls,
+				csi->capture.state.streaming, list_empty(&csi->capture.queue.done_list) ? "empty" : "has buffers",
+				atomic_read(&csi->capture.queue.owned_by_drv_count), csi->capture.queue.queued_count);
+	}
+	if ((r = vb2_dqbuf(&csi->capture.queue, &b, false)) != 0) {
+		shim_log("camera-a64: next_frame: dqbuf -> %d", r);
 		return r;
+	}
 	vb = vb2_get_buffer(&csi->capture.queue, b.index);
 	n = min(len, b.bytesused);
 	memcpy(dst, vb2_plane_vaddr(vb, 0), n);
