@@ -273,8 +273,10 @@ void platform_driver_unregister(struct platform_driver *drv);
 struct phe_driver_entry { int kind; const void *drv; };
 #define PHE_DRV_PLATFORM 1
 #define PHE_DRV_I2C 2
+/* not const: a writable section lands beside .data, inside the image's data range (a read-only orphan section
+ * sits between .text and .data, where the E32 image has no segment for it) */
 #define phe_register_driver(kind, d) \
-	static const struct phe_driver_entry __phe_drv_##d __attribute__((used, section("phe_drivers"))) = { kind, &(d) }
+	static struct phe_driver_entry __phe_drv_##d __attribute__((used, section("phe_drivers"))) = { kind, &(d) }
 #define module_platform_driver(d) phe_register_driver(PHE_DRV_PLATFORM, d)
 #define module_i2c_driver(d) phe_register_driver(PHE_DRV_I2C, d)
 #undef module_init

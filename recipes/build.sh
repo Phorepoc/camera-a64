@@ -18,7 +18,9 @@ NM=${NM:-arm-none-eabi-nm}
 mkdir -p "$OUT"
 
 # The Symbian ARM kernel's code-generation flags (armv7-a, ARM state, no unaligned access), freestanding C.
-CFLAGS=(-march=armv7-a -marm -mfloat-abi=soft -mno-unaligned-access -fshort-wchar -ffreestanding -fno-builtin -fno-common -fno-short-enums
+# -mword-relocations: addresses through literal words (R_ARM_ABS32), not MOVW/MOVT pairs, which the emitter's
+# E32 image relocations cannot express.
+CFLAGS=(-march=armv7-a -marm -mword-relocations -mfloat-abi=soft -mno-unaligned-access -fshort-wchar -ffreestanding -fno-builtin -fno-common -fno-short-enums
   -fno-strict-aliasing -fno-delete-null-pointer-checks -fwrapv -O2 -std=gnu11 -Wall -Wno-unused-function
   -Wno-unused-variable -Wno-unused-but-set-variable -Wno-address-of-packed-member
   -include "$REPO/shim/include/phe_config.h" -I"$REPO/linux/include" -I"$REPO/linux/include/uapi" -I"$REPO/shim/include")
