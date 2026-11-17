@@ -93,6 +93,6 @@ void CPheCamSource::Convert(const TUint8* aUyvy)
 			}
 		}
 	iBitmap->UnlockHeap();
-	if (++iFrames <= 3)
+	if (++iFrames <= 3 || iFrames % 50 == 0)
 		RDebug::Printf("PH: camera-a64: plug-in frame %d", iFrames);
 	}

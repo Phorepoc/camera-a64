@@ -188,6 +188,7 @@ extern "C" void phe_hw_dma_free(void *virt, size_t, uint32_t)
 static int (*IrqIsr)(int, void *);
 static void *IrqCtx;
 static TInt IrqNo;
+static TInt IrqCount;
 
 static TInt IrqThread(TAny *)
 	{
@@ -198,7 +199,9 @@ static TInt IrqThread(TAny *)
 		User::WaitForRequest(s);
 		if (s.Int() != KErrNone)
 			return s.Int();
-		IrqIsr(IrqNo, IrqCtx);
+		const int handled = IrqIsr(IrqNo, IrqCtx);
+		if (++IrqCount <= 3 || IrqCount % 100 == 0)
+			RDebug::Printf("PH: camera-a64: irq %d #%d handled %d", IrqNo, IrqCount, handled);
 		Hw.IrqEnable(ETrue);
 		}
 	}
@@ -217,6 +220,9 @@ extern "C" int phe_hw_irq_bind(int irq, int (*isr)(int, void *), void *ctx)
 	t.SetPriority(EPriorityRealTime);
 	t.Resume();
 	t.Close();
+	// Linux request_irq() returns with the line enabled; the channel binds it masked (GIC ISENABLER3 bit 20 was 0)
+	Hw.IrqEnable(ETrue);
+	RDebug::Printf("PH: camera-a64: irq %d bound, line enabled", irq);
 	return 0;
 	}
 extern "C" void phe_hw_irq_enable(int, int on) { Hw.IrqEnable(on); }

@@ -191,6 +191,7 @@ private:
 	TCameraInfo iInfo;
 	CPeriodic* iTimer;
 	CPheCamSource* iPheSource;	// OURS
+	TInt iPheDelivered, iPheFallback;	// OURS: driver frames already delivered; timer ticks with no new driver frame
 	TTimeIntervalMicroSeconds32 iFrameDelay;
 	TInt iFrameIndex;
 	TTimeIntervalMicroSeconds iElapsedTime;

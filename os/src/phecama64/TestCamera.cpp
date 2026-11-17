@@ -1010,6 +1010,26 @@ TInt CTestCamera::TimerCallBack(TAny* aThis)
 
 void CTestCamera::FrameReady()
 	{
+	// OURS (phecam): deliver only real driver frames -- no test pattern and no repeated frame, so a client never counts
+	// (or saves a still of) anything the sensor did not send
+	if (!iPheSource)
+		{
+		TRAPD(err, iPheSource = CPheCamSource::NewL(iCameraIndex));
+		if (err != KErrNone)
+			{
+			if (iPheFallback++ == 0)
+				RDebug::Printf("PH: phecam camera driver unavailable (%d): no frames", err);
+			return;
+			}
+		}
+	const TInt pheFrames = iPheSource->FrameCount();
+	if (pheFrames == iPheDelivered)
+		{
+		if (iPheFallback++ % 100 == 0)
+			RDebug::Printf("PH: camera-a64: plug-in no new frame (tick %d, %d real frames so far)", iPheFallback, pheFrames);
+		return;
+		}
+	iPheDelivered = pheFrames;
 	if (iVideoPreparedLast)
 		{
 		iVideoFramePos.iX += KFramePosIncrement;
