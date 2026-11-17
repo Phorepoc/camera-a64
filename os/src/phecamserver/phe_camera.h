@@ -15,6 +15,7 @@ int phe_camera_count(void);
 int phe_camera_configure(int unit, unsigned int width, unsigned int height, uint32_t pixelformat, uint32_t mbus_code,
 	unsigned int *bytesperline, unsigned int *sizeimage);
 int phe_camera_start(unsigned int nbufs);
+int phe_camera_rotation(int unit);	/* V4L2_CID_CAMERA_SENSOR_ROTATION, degrees CCW; 0 if the sensor has none */
 int phe_camera_next_frame(void *dst, unsigned int len);
 int phe_camera_stop(void);
 int phe_camera_ctrl(int unit, uint32_t id, int32_t value);

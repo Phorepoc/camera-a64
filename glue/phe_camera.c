@@ -217,6 +217,13 @@ int phe_camera_stop(void)
 	return locked_reqbufs(&req);
 }
 
+int phe_camera_rotation(int unit)
+{
+	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;
+	struct v4l2_ctrl *c = sd ? v4l2_ctrl_find(sd->ctrl_handler, V4L2_CID_CAMERA_SENSOR_ROTATION) : NULL;
+	return c ? v4l2_ctrl_g_ctrl(c) : 0;
+}
+
 int phe_camera_ctrl(int unit, uint32_t id, int32_t value)
 {
 	struct v4l2_subdev *sd = csi->bridge.source_parallel[unit].subdev;

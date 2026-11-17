@@ -103,6 +103,7 @@ TInt TWorker::Loop()
 					iFormat.iHeight = iHeight;
 					iFormat.iBytesPerLine = bpl;
 					iFormat.iSizeImage = size;
+					iFormat.iRotation = phe_camera_rotation(iUnit);
 					r = iFrame ? KErrNone : KErrNoMemory;
 					}
 				else

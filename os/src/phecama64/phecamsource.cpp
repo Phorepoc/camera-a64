@@ -38,8 +38,11 @@ void CPheCamSource::ConstructL(TInt aUnit)
 	iFrame = HBufC8::NewL(iFmt.iSizeImage);
 	iBuf.Set(iFrame->Des());
 	iBitmap = new (ELeave) CFbsBitmap;
-	// the sensors are mounted landscape (DT rotation 90/270): the bitmap is the frame turned to portrait
-	User::LeaveIfError(iBitmap->Create(TSize(iFmt.iHeight, iFmt.iWidth), EColor16MU));
+	// the frame turned upright by the sensor's rotation control (as a V4L2 consumer -- libcamera, Megapixels -- does):
+	// 90/270 swap the sides
+	const TBool quarter = iFmt.iRotation == 90 || iFmt.iRotation == 270;
+	RDebug::Printf("PH: camera-a64: plug-in sensor rotation %d", iFmt.iRotation);
+	User::LeaveIfError(iBitmap->Create(quarter ? TSize(iFmt.iHeight, iFmt.iWidth) : TSize(iFmt.iWidth, iFmt.iHeight), EColor16MU));
 	User::LeaveIfError(iCam.Start());
 	iStarted = ETrue;
 	Next();
@@ -68,7 +71,7 @@ void CPheCamSource::RunL()
 		Next();
 	}
 
-// packed UYVY (U0 Y0 V0 Y1), BT.601 studio range -> X8R8G8B8, transposed to portrait
+// packed UYVY (U0 Y0 V0 Y1), BT.601 studio range -> X8R8G8B8, rotated iRotation degrees counter-clockwise
 void CPheCamSource::Convert(const TUint8* aUyvy)
 	{
 	const TInt w = iFmt.iWidth, h = iFmt.iHeight;
@@ -88,7 +91,16 @@ void CPheCamSource::Convert(const TUint8* aUyvy)
 				r = r < 0 ? 0 : r > 255 ? 255 : r;
 				g = g < 0 ? 0 : g > 255 ? 255 : g;
 				b = b < 0 ? 0 : b > 255 ? 255 : b;
-				out[(w - 1 - (x + k)) * wordsPerLine + (h - 1 - y)] = 0xFF000000u | (r << 16) | (g << 8) | b;
+				const TInt sx = x + k;
+				TInt dx, dy;		// destination of source pixel (sx, y)
+				switch (iFmt.iRotation)
+					{
+					case 90: dx = y; dy = w - 1 - sx; break;		// 90 CCW
+					case 180: dx = w - 1 - sx; dy = h - 1 - y; break;
+					case 270: dx = h - 1 - y; dy = sx; break;		// 270 CCW = 90 CW
+					default: dx = sx; dy = y; break;
+					}
+				out[dy * wordsPerLine + dx] = 0xFF000000u | (r << 16) | (g << 8) | b;
 				}
 			}
 		}

@@ -22,7 +22,9 @@ enum TPheCamOp
 	EPheCamNextFrameCancel = 5
 	};
 
-struct TPheCamFormat { TInt iWidth, iHeight, iBytesPerLine, iSizeImage; };
+// iRotation: the sensor's V4L2_CID_CAMERA_SENSOR_ROTATION (from the DT "rotation" property): the correction, in degrees
+// counter-clockwise, a consumer applies to captured images to show them upright (PinePhone: rear 270, front 90)
+struct TPheCamFormat { TInt iWidth, iHeight, iBytesPerLine, iSizeImage, iRotation; };
 
 #ifndef __KERNEL_MODE__
 class RPheCamera : public RSessionBase
