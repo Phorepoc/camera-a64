@@ -21,6 +21,8 @@
 //
 
 #include "test_advanced_settings.h"
+#include "phecam_api.h"
+#include <e32debug.h>
 #include <ecamerrors.h>
 #include "ecamversion.h"
 
@@ -31,6 +33,7 @@ CTestCamAdvSet::CTestCamAdvSet(CTestCamera& aOwner): iOwner(aOwner)
 	
 CTestCamAdvSet::~CTestCamAdvSet()
 	{
+	delete iPheAfPoll;
 	iSupportedISORates.Close();
 	iSupportedApertures.Close();
 	iSupportedShutterSpeeds.Close();
@@ -134,6 +137,22 @@ void CTestCamAdvSet::Init()
 	
 void CTestCamAdvSet::ConstructL()
 	{
+	// OURS (camera-a64): which of the real controls this camera has (phecam_api.h ids)
+	iPheFocusMode = CCamera::CCameraAdvancedSettings::EFocusModeAuto;
+	iPheAfType = CCamera::CCameraAdvancedSettings::EAutoFocusTypeOff;
+	TPheCamCtrlInfo ci;
+	iPheHasAf = iOwner.QueryCtrl(KV4l2CidFocusAuto, &ci) == KErrNone;
+	TInt v0 = 0, v1 = 0;
+	if (iOwner.QueryCtrl(KV4l2CidAutoExposureBias, &ci) == KErrNone && iOwner.PheMenuValue(KV4l2CidAutoExposureBias, 0, v0) == KErrNone
+		&& iOwner.PheMenuValue(KV4l2CidAutoExposureBias, 1, v1) == KErrNone)
+		{
+		iPheEvStep = (v1 - v0) / 10;		// milli-EV -> EV x 100
+		iPheEvDefault = ci.iDefault;
+		iPheEvMax = ci.iMaximum;
+		}
+	iPheAfPoll = CPeriodic::NewL(CActive::EPriorityStandard);
+	RDebug::Printf("PH: camera-a64: plug-in advanced settings: autofocus %d, EV step %d (%d..%d)", iPheHasAf, iPheEvStep,
+		-iPheEvDefault, iPheEvMax - iPheEvDefault);
 	iSupportedISORates.Reset();
 	iSupportedISORates.AppendL(KDefaultIsoRate);
 	
@@ -209,24 +228,31 @@ void CTestCamAdvSet::SetStabilizationMode(CCamera::CCameraAdvancedSettings::TSta
 	
 TInt CTestCamAdvSet::SupportedFocusModes() const
 	{
-	return KFeatureNotSupported;
+	// OURS (camera-a64): the OV5640's autofocus firmware (V4L2_CID_FOCUS_AUTO + the lens position); none on the GC2145
+	return PheHasAf() ? (CCamera::CCameraAdvancedSettings::EFocusModeAuto | CCamera::CCameraAdvancedSettings::EFocusModeManual)
+		: KFeatureNotSupported;
 	}
 	
 CCamera::CCameraAdvancedSettings::TFocusMode CTestCamAdvSet::FocusMode() const
 	{
-	return CCamera::CCameraAdvancedSettings::EFocusModeAuto;	
+	return iPheFocusMode;
 	}
 	
 void CTestCamAdvSet::SetFocusMode(CCamera::CCameraAdvancedSettings::TFocusMode aFocusMode)
 	{
 	TInt eventError = KErrNotSupported;
-	if(aFocusMode == CCamera::CCameraAdvancedSettings::EFocusModeAuto)
+	if (PheHasAf() && (aFocusMode == CCamera::CCameraAdvancedSettings::EFocusModeAuto ||
+		aFocusMode == CCamera::CCameraAdvancedSettings::EFocusModeManual))
 		{
-		eventError = KErrAlreadyExists;
+		// manual = the firmware paused and the lens at FocusDistance; auto = whatever AutoFocusType says
+		eventError = aFocusMode == CCamera::CCameraAdvancedSettings::EFocusModeManual ?
+			iOwner.SetCtrl(KV4l2CidFocusAuto, 0) : KErrNone;
+		if (eventError == KErrNone)
+			iPheFocusMode = aFocusMode;
 		}
-		
+	else if (aFocusMode == iPheFocusMode)
+		eventError = KErrAlreadyExists;
 	TECAMEvent ecamevent(KUidECamEventCameraSettingFocusMode, eventError);
-	
 	iOwner.iECamEvent = ecamevent;
 	iOwner.iHandleEventAsync.CallBack();
 	}
@@ -261,28 +287,47 @@ void CTestCamAdvSet::SetFocusRange(CCamera::CCameraAdvancedSettings::TFocusRange
 	
 TInt CTestCamAdvSet::SupportedAutoFocusTypes() const
 	{
-	return KFeatureNotSupported;
+	return PheHasAf() ? (CCamera::CCameraAdvancedSettings::EAutoFocusTypeSingle |
+		CCamera::CCameraAdvancedSettings::EAutoFocusTypeContinuous) : KFeatureNotSupported;
 	}
 	
 CCamera::CCameraAdvancedSettings::TAutoFocusType CTestCamAdvSet::AutoFocusType() const
 	{
-    return CCamera::CCameraAdvancedSettings::EAutoFocusTypeOff;
+	return iPheAfType;
 	}
 	
 void CTestCamAdvSet::SetAutoFocusType(CCamera::CCameraAdvancedSettings::TAutoFocusType aAutoFocusType)
 	{
+	// OURS (camera-a64), the ov5640 driver's firmware commands: continuous = V4L2_CID_FOCUS_AUTO 1; single = one
+	// V4L2_CID_AUTO_FOCUS_START, its result (V4L2_CID_AUTO_FOCUS_STATUS) reported as the optimal-focus event; off =
+	// V4L2_CID_AUTO_FOCUS_STOP (the firmware parks the lens at infinity)
 	TInt eventError = KErrNotSupported;
-	if(aAutoFocusType == CCamera::CCameraAdvancedSettings::EAutoFocusTypeOff)
+	if (PheHasAf())
 		{
-		eventError = KErrAlreadyExists;
+		switch (aAutoFocusType)
+			{
+			case CCamera::CCameraAdvancedSettings::EAutoFocusTypeContinuous:
+				eventError = iOwner.SetCtrl(KV4l2CidFocusAuto, 1);
+				break;
+			case CCamera::CCameraAdvancedSettings::EAutoFocusTypeSingle:
+				eventError = iOwner.SetCtrl(KV4l2CidAutoFocusStart, 1);
+				if (eventError == KErrNone)
+					PheWatchFocus();
+				break;
+			case CCamera::CCameraAdvancedSettings::EAutoFocusTypeOff:
+				eventError = iOwner.SetCtrl(KV4l2CidAutoFocusStop, 1);
+				break;
+			default:
+				break;
+			}
+		if (eventError == KErrNone)
+			iPheAfType = aAutoFocusType;
+		RDebug::Printf("PH: camera-a64: plug-in autofocus type %d -> %d", aAutoFocusType, eventError);
 		}
-		
 	TECAMEvent ecamevent1(KUidECamEventCameraSettingAutoFocusType2, eventError);
 	TECAMEvent ecamevent2(KUidECamEventCameraSettingAutoFocusType, eventError);
-	
 	iOwner.iECamEvent = ecamevent1;
 	iOwner.iHandleEventAsync.CallBack();
-	
 	iOwner.iECamEvent = ecamevent2;
 	iOwner.iHandleEventAsync.CallBack();
 	}
@@ -816,72 +861,81 @@ void CTestCamAdvSet::GetExposureCompensationStepsL(RArray<TInt>& aExposureCompen
 	{
 	aExposureCompensationSteps.Reset();
 	aInfo = ENotActive;
+	if (PheEv())
+		{
+		aExposureCompensationSteps.AppendL(iPheEvStep);
+		aInfo = EDiscreteSteps;
+		}
 	}
 
 void CTestCamAdvSet::GetExposureCompensationRangeInSteps(TInt& aNegativeCompensation, TInt& aPositiveCompensation) const
 	{
-	aNegativeCompensation = KExposureCompensationStep;
-	aPositiveCompensation = KExposureCompensationStep;
+	aNegativeCompensation = PheEv() ? -iPheEvDefault : KExposureCompensationStep;
+	aPositiveCompensation = PheEv() ? iPheEvMax - iPheEvDefault : KExposureCompensationStep;
 	}
 	
 TInt CTestCamAdvSet::ExposureCompensationStep() const
 	{
-	return KExposureCompensationStep;
+	return PheEv() ? iPheEvStep : KExposureCompensationStep;
 	}
 	
 TInt CTestCamAdvSet::GetExposureCompensationStep(TInt& aExposureCompensationStep) const
 	{
-	aExposureCompensationStep = KExposureCompensationStep;
+	aExposureCompensationStep = ExposureCompensationStep();
 	return KErrNone;
 	}
 	
 void CTestCamAdvSet::SetExposureCompensationStep(TInt /*aExposureCompensationStep*/)
 	{
-	TECAMEvent ecamevent(KUidECamEventCameraSettingExposureCompensationStep, KErrNotSupported);
-	
+	TECAMEvent ecamevent(KUidECamEventCameraSettingExposureCompensationStep, KErrNotSupported);	// one fixed step
 	iOwner.iECamEvent = ecamevent;
 	iOwner.iHandleEventAsync.CallBack();
 	}
 	
 TInt CTestCamAdvSet::ExposureCompensation() const
 	{
-	return KExposureCompensationStep;
+	TInt c = 0;
+	GetExposureCompensation(c);
+	return c;
 	}
 	
 TInt CTestCamAdvSet::GetExposureCompensation(TInt& aExposureCompensation) const
 	{
-	aExposureCompensation = KExposureCompensationStep;
+	// OURS (camera-a64): the GC2145's V4L2_CID_AUTO_EXPOSURE_BIAS menu index, in steps from its 0 EV item
+	TInt index = 0;
+	if (!PheEv() || const_cast<CTestCamera&>(iOwner).GetCtrl(KV4l2CidAutoExposureBias, index) != KErrNone)
+		{
+		aExposureCompensation = 0;
+		return KErrNotSupported;
+		}
+	aExposureCompensation = index - iPheEvDefault;
 	return KErrNone;
 	}
 	
-void CTestCamAdvSet::SetExposureCompensation(TInt /*aExposureCompensation*/)
+void CTestCamAdvSet::SetExposureCompensation(TInt aExposureCompensation)
 	{
-	TECAMEvent ecamevent(KUidECamEventCameraSettingExposureCompensation, KErrNotSupported);
-	
+	TInt eventError = KErrNotSupported;
+	if (PheEv() && aExposureCompensation >= -iPheEvDefault && aExposureCompensation <= iPheEvMax - iPheEvDefault)
+		eventError = iOwner.SetCtrl(KV4l2CidAutoExposureBias, iPheEvDefault + aExposureCompensation);
+	TECAMEvent ecamevent(KUidECamEventCameraSettingExposureCompensation, eventError);
 	iOwner.iECamEvent = ecamevent;
 	iOwner.iHandleEventAsync.CallBack();
 	}
 	
 TInt CTestCamAdvSet::SupportedWhiteBalanceModes() const
 	{
-	return KFeatureNotSupported;
+	return iOwner.PheWhiteBalanceModes();
 	}
 	
 CCamera::TWhiteBalance CTestCamAdvSet::WhiteBalanceMode() const
 	{
-	return CCamera::EWBAuto;
+	return iOwner.iPheWhiteBalance;
 	}
 	
 void CTestCamAdvSet::SetWhiteBalanceMode(CCamera::TWhiteBalance aWhiteBalanceMode)
 	{
-	TInt eventError = KErrNotSupported;
-	if(aWhiteBalanceMode == CCamera::EWBAuto)
-		{
-		eventError = KErrAlreadyExists;
-		}
-		
+	TInt eventError = aWhiteBalanceMode == iOwner.iPheWhiteBalance ? KErrAlreadyExists : iOwner.PheSetWhiteBalance(aWhiteBalanceMode);
 	TECAMEvent ecamevent(KUidECamEventCameraSettingWhiteBalanceMode, eventError);
-	
 	iOwner.iECamEvent = ecamevent;
 	iOwner.iHandleEventAsync.CallBack();
 	}
@@ -1604,4 +1658,37 @@ void CTestCamPresets::GetAssociatedSettingsL(TUid aPreset, RArray<TUid>& aSettin
 			User::Leave(KErrArgument);
 			
 		}
+	}
+
+// OURS (camera-a64): a single autofocus is over when the firmware reports it (V4L2_CID_AUTO_FOCUS_STATUS): reached =
+// the optimal-focus event with KErrNone, failed = KErrNotFound, nothing in 5 s = KErrTimedOut
+void CTestCamAdvSet::PheWatchFocus()
+	{
+	iPheAfPoll->Cancel();
+	iPheAfPolls = 0;
+	iPheAfPoll->Start(100000, 100000, TCallBack(PheFocusTick, this));
+	}
+
+TInt CTestCamAdvSet::PheFocusTick(TAny* aSelf)
+	{
+	CTestCamAdvSet* self = static_cast<CTestCamAdvSet*>(aSelf);
+	TInt status = 0, err = KErrNone;
+	if (self->iOwner.GetCtrl(KV4l2CidAutoFocusStatus, status) != KErrNone)
+		err = KErrGeneral;
+	else if (status & KV4l2AutoFocusStatusBusy)
+		{
+		if (++self->iPheAfPolls < 50)
+			return KErrNone;
+		err = KErrTimedOut;
+		}
+	else if (status & KV4l2AutoFocusStatusFailed)
+		err = KErrNotFound;
+	else if (!(status & KV4l2AutoFocusStatusReached) && ++self->iPheAfPolls < 50)
+		return KErrNone;		// idle: not started yet
+	self->iPheAfPoll->Cancel();
+	RDebug::Printf("PH: camera-a64: plug-in autofocus done: status %d -> %d after %d polls", status, err, self->iPheAfPolls);
+	TECAMEvent ecamevent(KUidECamEventCameraSettingsOptimalFocus, err);
+	self->iOwner.iECamEvent = ecamevent;
+	self->iOwner.iHandleEventAsync.CallBack();
+	return KErrNone;
 	}

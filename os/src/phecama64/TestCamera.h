@@ -28,6 +28,7 @@
 #include <ecam.h>
 #include <w32std.h>
 #include <ecamadvsettings.h>
+#include <ecam/mcameradirectviewfinder.h>
 
 _LIT(KTestCameraPluginName, "C:\\102070cc.txt");
 
@@ -45,6 +46,68 @@ class CTestCamAdvSet;
 class CTestCamPresets;
 class CTestCamSnapshot;
 class CTestCamImgProc;
+class CTestCamera;
+class CImageEncoder;
+class CFrameImageData;
+
+// OURS (camera-a64): a still as ECam delivers it -- a bitmap (the EFormatFbsBitmap* formats) or encoded bytes
+// (EFormatJpeg / EFormatExif); the plug-in owns both until the next capture
+class RPheStillBuffer : public MCameraBuffer
+	{
+public:
+	RPheStillBuffer(CFbsBitmap*& aBitmap, HBufC8*& aData) : iBitmap(aBitmap), iData(aData) {}
+	virtual TInt NumFrames() { return 1; }
+	virtual TDesC8* DataL(TInt aFrameIndex) { if (aFrameIndex != 0 || !iData) User::Leave(KErrNotSupported); return iData; }
+	virtual CFbsBitmap& BitmapL(TInt aFrameIndex) { if (aFrameIndex != 0 || !iBitmap) User::Leave(KErrNotSupported); return *iBitmap; }
+	virtual RChunk& ChunkL() { User::Leave(KErrNotSupported); return iChunk; }
+	virtual TInt ChunkOffsetL(TInt /*aFrameIndex*/) { User::Leave(KErrNotSupported); return 0; }
+	virtual TInt FrameSize(TInt aFrameIndex) { return aFrameIndex == 0 && iData ? iData->Length() : KErrNotSupported; }
+	virtual void Release() {}
+private:
+	CFbsBitmap*& iBitmap;
+	HBufC8*& iData;
+	RChunk iChunk;
+	};
+
+// OURS: ICL's JPEG encoder on a still (Exif: the CJPEGExifEncoder class of the same codec, so the codec writes APP1)
+class CPheJpegSaver : public CActive
+	{
+public:
+	CPheJpegSaver(CTestCamera& aOwner) : CActive(EPriorityStandard), iOwner(aOwner) { CActiveScheduler::Add(this); }
+	~CPheJpegSaver();
+	void StartL(const CFbsBitmap& aBitmap, HBufC8*& aData, TBool aExif, TInt aQuality);
+private:
+	void RunL();
+	void DoCancel();
+	CTestCamera& iOwner;
+	CImageEncoder* iEncoder;
+	CFrameImageData* iFrameData;
+	};
+
+// OURS: CCamera::CCameraDirectViewFinder -- pause/resume of the direct viewfinder
+class CPheDirectViewFinder : public CBase, public MCameraDirectViewFinder
+	{
+public:
+	CPheDirectViewFinder(CTestCamera& aOwner) : iOwner(aOwner) {}
+	void Release();
+	void PauseViewFinderDirectL();
+	void ResumeViewFinderDirectL();
+	CCamera::CCameraDirectViewFinder::TViewFinderState ViewFinderState() const;
+private:
+	CTestCamera& iOwner;
+	};
+
+// OURS: the camera's own V4L2 controls, for a camera app that wants more than ECam names (phecamera): custom interface
+// KPheCameraControlsUid. Control ids and values are V4L2's (phecam_api.h).
+const TUid KPheCameraControlsUid = { 0xE7015C66 };
+class MPheCameraControls
+	{
+public:
+	virtual TInt SetCtrl(TUint32 aId, TInt aValue) = 0;
+	virtual TInt GetCtrl(TUint32 aId, TInt& aValue) = 0;
+	virtual TInt QueryCtrl(TUint32 aId, TAny* aInfo) = 0;		// a TPheCamCtrlInfo
+	virtual TInt FocusAt(const TPoint& aPoint, const TSize& aFrame) = 0;	// a point of the upright viewfinder picture: single AF there
+	};
 
 class RTestCameraFrameBuffer : public MCameraBuffer
 	{
@@ -78,12 +141,29 @@ public:
 class CDirectScreenAccess;
 class CPheCamSource;	// OURS: the camera server pixel source (phecamsource.h)
 
-class CTestCamera : public CCameraPlugin, public MDirectScreenAccess
+class CTestCamera : public CCameraPlugin, public MDirectScreenAccess, public MPheCameraControls
 	{
 	friend class CTestCamAdvSet;
 	friend class CTestCamPresets;
 	friend class CTestCamSnapshot;
 	friend class CTestCamImgProc;
+	friend class CPheJpegSaver;
+	friend class CPheDirectViewFinder;
+public:
+	// OURS (camera-a64): MPheCameraControls
+	TInt SetCtrl(TUint32 aId, TInt aValue);
+	TInt GetCtrl(TUint32 aId, TInt& aValue);
+	TInt QueryCtrl(TUint32 aId, TAny* aInfo);
+	TInt FocusAt(const TPoint& aPoint, const TSize& aFrame);
+	CPheCamSource* PheSource() const { return iPheSource; }
+	TInt PheMenuValue(TUint32 aId, TInt aIndex, TInt& aValue);
+	TInt PheSetWhiteBalance(CCamera::TWhiteBalance aMode);
+	TInt PheWhiteBalanceModes() const { return iInfo.iWhiteBalanceModesSupported; }
+private:
+	void PheInitL();
+	void PheCaptureStill();
+	void PheDeliver(TInt aError);
+	void PheEncoded(TInt aError);
 	
 public:
 	static CTestCamera* NewL();
@@ -283,6 +363,17 @@ private:
 	CTestCamAdvSet* iAdvSettingsImpl;
 	CTestCamSnapshot* iSnapshotImpl;
 	CTestCamImgProc* iImgProcImpl;
+	// OURS (camera-a64): the still path
+	RArray<TInt> iPheStillMode;		// ECam size index -> the source's mode index (largest first)
+	TInt iPheStillIndex;
+	TBool iPheMirror, iPheVfPaused;
+	TInt iPheJpegQuality;		// 0 = the codec's default
+	CCamera::TWhiteBalance iPheWhiteBalance;
+	CFbsBitmap* iPheStill;
+	HBufC8* iPheStillData;
+	RPheStillBuffer iPheStillBuffer;
+	CPheJpegSaver* iPheSaver;
+	CPheDirectViewFinder* iPheDirectVf;
 	
 	CCamera::CCameraAdvancedSettings::TDriveMode iDriveMode;
 	TInt iBurstImages;

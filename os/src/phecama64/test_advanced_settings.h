@@ -228,11 +228,23 @@ private:
 	CTestCamAdvSet(CTestCamera& aOwner);
 	void Init();
 	void ConstructL();
+	// OURS (camera-a64)
+	TBool PheHasAf() const { return iPheHasAf; }
+	TBool PheEv() const { return iPheEvStep > 0; }
+	void PheWatchFocus();
+	static TInt PheFocusTick(TAny* aSelf);
 	
 private:
 	CTestCamera& iOwner;
 	
 	TInt iRefCount;
+	// OURS (camera-a64): the real controls
+	TBool iPheHasAf;
+	CCamera::CCameraAdvancedSettings::TFocusMode iPheFocusMode;
+	CCamera::CCameraAdvancedSettings::TAutoFocusType iPheAfType;
+	CPeriodic* iPheAfPoll;
+	TInt iPheAfPolls;
+	TInt iPheEvStep, iPheEvDefault, iPheEvMax;	// step in EV x KECamFineResolutionFactor; menu indices
 	
 	CCamera::CCameraAdvancedSettings::TCameraType iCameraTypes[KNumAvailableCameras];
 	TInt iFocusDistance;

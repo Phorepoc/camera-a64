@@ -30,6 +30,10 @@
 #include "test_image_processing.h"
 #include "TestCameraUids.hrh"
 #include <ecam.h>
+#include <imageconversion.h>
+#include <iclexif.h>
+#include <icl/imagecodecdata.h>
+#include <icl/icl_uids.hrh>
 
 //
 // Main stuff
@@ -51,6 +55,7 @@ void CTestCamera::Construct2L(MCameraObserver& aObserver,TInt aCameraIndex)
 	{
 	iObserver = &aObserver;
 	iCameraIndex = aCameraIndex;
+	PheInitL();
 	}
 	
 void CTestCamera::Construct2DupL(MCameraObserver& aObserver,TInt aCameraHandle)
@@ -90,14 +95,9 @@ void CTestCamera::ConstructL()
 		}
 
 	User::LeaveIfError(iScreenDev->CreateContext(iScreenGc));
-#ifdef __MARM__
-	User::LeaveIfError(iImageSizes.Append( TSize(480, 640) )); // OURS (phecam): portrait VGA, the phone frame is portrait
-#else
-	User::LeaveIfError(iImageSizes.Append( TSize(640, 480) )); // VGA
-#endif
-	User::LeaveIfError(iImageSizes.Append( TSize(160, 120) )); // QQVGA
-	iInfo.iNumImageSizesSupported = iImageSizes.Count();
-	iStillImageSize = iImageSizes[1]; // Defaults to QQVGA
+	// OURS (camera-a64): the capture sizes are the sensor's modes (PheInitL, once the camera index is known); the canvas the
+	// template draws viewfinder frames on stays the upright viewfinder size
+	iStillImageSize = TSize(480, 640);
 
 	User::LeaveIfError(iVideoFrameSizes.Append( TSize(176, 144) )); // QCIF
 	User::LeaveIfError(iVideoFrameSizes.Append( TSize(128, 96) ));  // subQCIF
@@ -126,6 +126,7 @@ void CTestCamera::Construct2L(MCameraObserver2& aObserver,TInt aCameraIndex,TInt
 	iObserver2 = &aObserver;
 	iCameraIndex = aCameraIndex;
 	iPriority = aPriority;
+	PheInitL();
 	}
 	
 void CTestCamera::Construct2DupL(MCameraObserver2& aObserver,TInt aCameraHandle)
@@ -162,7 +163,8 @@ CTestCamera::CTestCamera():
 	iSnapshotImpl(NULL),
 	iImgProcImpl(NULL),
 	iDriveMode(KDefaultDriveMode),
-	iBurstImages(KBurstImages)
+	iBurstImages(KBurstImages),
+	iPheStillBuffer(iPheStill, iPheStillData)
 	{
 	TCallBack reserveCallBack(ReserveCallBack,this);
 	iReserveAsync.Set(reserveCallBack);
@@ -212,6 +214,7 @@ CTestCamera::CTestCamera():
 	iInfo.iImageFormatsSupported |= EFormatFbsBitmapColor4K;
 	iInfo.iImageFormatsSupported |= EFormatFbsBitmapColor64K;
 	iInfo.iImageFormatsSupported |= EFormatFbsBitmapColor16M;
+	iInfo.iImageFormatsSupported |= EFormatFbsBitmapColor16MU | EFormatJpeg | EFormatExif;	// OURS (camera-a64)
 
 	iInfo.iVideoFrameFormatsSupported = 0;
 	iInfo.iVideoFrameFormatsSupported |= EFormatFbsBitmapColor4K;
@@ -228,6 +231,11 @@ CTestCamera::CTestCamera():
 CTestCamera::~CTestCamera()
 	{
 	delete iTimer;
+	delete iPheSaver;
+	delete iPheDirectVf;
+	delete iPheStill;
+	delete iPheStillData;
+	iPheStillMode.Close();
 	delete iPheSource;
 	delete iStillImage;
 	delete iStillImageGc;
@@ -391,16 +399,12 @@ CCamera::TExposure CTestCamera::Exposure() const
 void CTestCamera::SetWhiteBalanceL(TWhiteBalance aWhiteBalance)
 	{
 	CheckReserveAndPowerL();
-
-	if (aWhiteBalance != EWBAuto)
-		{
-		User::Leave(KErrNotSupported);
-		}
+	User::LeaveIfError(PheSetWhiteBalance(aWhiteBalance));
 	}
 
 CCamera::TWhiteBalance CTestCamera::WhiteBalance() const
 	{
-	return EWBAuto;
+	return iPheWhiteBalance;
 	}
 
 void CTestCamera::StartViewFinderDirectL(RWsSession& aWs,CWsScreenDevice& aScreenDevice,RWindowBase& aWindow,TRect& aScreenRect)
@@ -527,15 +531,15 @@ TBool CTestCamera::ViewFinderActive() const
 
 void CTestCamera::SetViewFinderMirrorL(TBool aMirror)
 	{
-	if (aMirror)
-		{
-		User::Leave(KErrNotSupported);	
-		}
+	// OURS (camera-a64): left-right in the conversion (a selfie preview); stills stay unmirrored
+	iPheMirror = aMirror;
+	if (iPheSource)
+		iPheSource->SetMirror(aMirror);
 	}
 
 TBool CTestCamera::ViewFinderMirror() const
 	{
-	return EFalse;
+	return iPheMirror;
 	}
 
 void CTestCamera::PrepareImageCaptureL(TFormat aImageFormat,TInt aSizeIndex)
@@ -558,50 +562,13 @@ void CTestCamera::PrepareImageCaptureL(TFormat aImageFormat,TInt aSizeIndex)
 		}
 
 	iVideoPreparedLast = EFalse;
-
-	if (iImageCapturePrepared
-		&& iStillImageSize == iImageSizes[aSizeIndex]
-		&& iStillImageFormat == aImageFormat)
-		{
-		return;
-		}
-
-	iStillImageSize = iImageSizes[aSizeIndex];
+	// OURS (camera-a64): a still is a capture in the sensor mode of that size (CPheCamSource::CaptureStillL), delivered in
+	// the asked format; the template's canvas (iStillImage) stays the viewfinder's
+	iPheStillIndex = aSizeIndex;
 	iStillImageFormat = aImageFormat;
-
-	TDisplayMode displayMode = ENone;
-	switch (iStillImageFormat)
-		{
-		case EFormatFbsBitmapColor4K :
-			displayMode = EColor4K;
-			break;
-		case EFormatFbsBitmapColor64K :
-			displayMode = EColor64K;
-			break;
-		case EFormatFbsBitmapColor16M :
-			displayMode = EColor16M;
-			break;
-		default :
-			User::Leave(KErrNotSupported);
-			break;
-		}
-
-	delete iStillImageGc;
-	iStillImageGc = NULL;
-	delete iStillImageDev;
-	iStillImageDev = NULL;
-	delete iStillImage;
-	iStillImage = NULL;
-
-	iStillImage = new(ELeave) CFbsBitmap;
-	User::LeaveIfError(iStillImage->Create(iStillImageSize, displayMode));
-	iStillImageDev = CFbsBitmapDevice::NewL(iStillImage);
-	User::LeaveIfError(iStillImageDev->CreateContext(iStillImageGc));
-	iStillImageGc->SetPenColor(KRgbBlack);
-	iStillImageGc->SetPenSize(TSize(KFrameFeatureBorderThickness, KFrameFeatureBorderThickness));
-	iStillImageGc->SetBrushColor(KRgbWhite);
-	iStillImageGc->SetFaded(ETrue);
 	iImageCapturePrepared = ETrue;
+	RDebug::Printf("PH: camera-a64: plug-in still prepared: %dx%d, format %x", iImageSizes[aSizeIndex].iWidth,
+		iImageSizes[aSizeIndex].iHeight, aImageFormat);
 	}
 
 void CTestCamera::PrepareImageCaptureL(TFormat /*aImageFormat*/,TInt /*aSizeIndex*/,const TRect& /*aClipRect*/)
@@ -855,17 +822,27 @@ TInt CTestCamera::FramesPerBuffer() const
 	return 1;
 	}
 
-void CTestCamera::SetJpegQuality(TInt /*aQuality*/)
+void CTestCamera::SetJpegQuality(TInt aQuality)
 	{
+	iPheJpegQuality = Max(1, Min(aQuality, 100));
 	}
 
 TInt CTestCamera::JpegQuality() const
 	{
-	return 0;
+	return iPheJpegQuality;
 	}
 
 TAny* CTestCamera::CustomInterface(TUid aInterface)
 	{
+	// OURS (camera-a64)
+	if (aInterface == KPheCameraControlsUid)
+		return static_cast<MPheCameraControls*>(this);
+	if (aInterface == KECamMCameraDirectViewFinderUid)
+		{
+		if (!iPheDirectVf)
+			iPheDirectVf = new CPheDirectViewFinder(*this);
+		return iPheDirectVf ? static_cast<MCameraDirectViewFinder*>(iPheDirectVf) : NULL;
+		}
 	TAny* ptrIface = NULL;
 	TRAPD(error,CustomInterfaceL(ptrIface, aInterface));
 	
@@ -1012,15 +989,11 @@ void CTestCamera::FrameReady()
 	{
 	// OURS (phecam): deliver only real driver frames -- no test pattern and no repeated frame, so a client never counts
 	// (or saves a still of) anything the sensor did not send
-	if (!iPheSource)
+	if (!iPheSource || (!iPheSource->Streaming() && iPheSource->Start() != KErrNone))
 		{
-		TRAPD(err, iPheSource = CPheCamSource::NewL(iCameraIndex));
-		if (err != KErrNone)
-			{
-			if (iPheFallback++ == 0)
-				RDebug::Printf("PH: phecam camera driver unavailable (%d): no frames", err);
-			return;
-			}
+		if (iPheFallback++ == 0)
+			RDebug::Printf("PH: camera-a64: plug-in camera driver unavailable: no frames");
+		return;
 		}
 	const TInt pheFrames = iPheSource->FrameCount();
 	if (pheFrames == iPheDelivered)
@@ -1105,8 +1078,7 @@ void CTestCamera::FrameReady()
 					}
 				}
 				
-			GetImgProcessedFrame(*iStillImageGc, iStillImagePos);
-			ServiceImageCapture(*iStillImageGc);	
+			PheCaptureStill();	// OURS (camera-a64): a capture in the sensor mode of the prepared size	
 							
 			if (iVideoPreparedLast)
 				{
@@ -1205,13 +1177,6 @@ void CTestCamera::FrameReady()
 void CTestCamera::GetFrame(CFbsBitGc& aGc, TPoint& aPos) const
 	{
 	// OURS (phecam): the latest frame of the camera driver, scaled to the target; the moving square below is the fallback
-	CTestCamera* self = const_cast<CTestCamera*>(this);
-	if (!iPheSource)
-		{
-		TRAPD(err, self->iPheSource = CPheCamSource::NewL(iCameraIndex));	// the camera index = the driver unit (0 rear, 1 front)
-		if (err != KErrNone)
-			RDebug::Printf("PH: phecam camera driver unavailable (%d): test pattern", err);
-		}
 	CFbsBitmap* frame = iPheSource ? iPheSource->Frame() : NULL;
 	if (frame)
 		{
@@ -1343,6 +1308,8 @@ void CTestCamera::ServiceVideo(TInt aBufferNum)
 
 void CTestCamera::ServiceViewFinder(CFbsBitmap* aSourceFrame)
 	{
+	if (iPheVfPaused)	// OURS: CCameraDirectViewFinder::PauseViewFinderDirectL
+		return;
 	if (iDSA)
 		{
 		iDSA->Gc()->DrawBitmap(iScreenRect,aSourceFrame);
@@ -1618,3 +1585,298 @@ EXPORT_C const TImplementationProxy* ImplementationGroupProxy(TInt& aTableCount)
 	return ImplementationTable;
 	}
 
+
+// ---- OURS (camera-a64): the real camera behind the template ----
+
+// the camera index is the driver unit (0 rear OV5640, 1 front GC2145): its modes become the capture sizes, its controls
+// the white-balance modes; without the camera server the template keeps empty lists (no frames, no stills)
+void CTestCamera::PheInitL()
+	{
+	TRAPD(err, iPheSource = CPheCamSource::NewL(iCameraIndex));
+	if (err != KErrNone)
+		{
+		RDebug::Printf("PH: camera-a64: plug-in camera %d unavailable (%d)", iCameraIndex, err);
+		return;
+		}
+	// ECam lists capture sizes largest first
+	const RArray<TSize>& sizes = iPheSource->StillSizes();
+	iImageSizes.Reset();
+	iPheStillMode.Reset();
+	for (TInt i = 0; i < sizes.Count(); ++i)
+		{
+		const TInt area = sizes[i].iWidth * sizes[i].iHeight;
+		TInt at = 0;
+		while (at < iImageSizes.Count() && iImageSizes[at].iWidth * iImageSizes[at].iHeight >= area)
+			++at;
+		User::LeaveIfError(iImageSizes.Insert(sizes[i], at));
+		User::LeaveIfError(iPheStillMode.Insert(i, at));
+		}
+	iInfo.iNumImageSizesSupported = iImageSizes.Count();
+	// white balance: the preset menu (GC2145) or the AWB switch alone (OV5640: auto, or manual red/blue gains)
+	iPheWhiteBalance = EWBAuto;
+	iInfo.iWhiteBalanceModesSupported = 0;
+	TPheCamCtrlInfo ci;
+	if (iPheSource->QueryCtrl(KV4l2CidAutoNPresetWhiteBalance, ci) == KErrNone)
+		{
+		static const TInt map[][2] = { { EWBDaylight, EV4l2WbDaylight }, { EWBCloudy, EV4l2WbCloudy },
+			{ EWBTungsten, EV4l2WbIncandescent }, { EWBFluorescent, EV4l2WbFluorescent }, { EWBFlash, EV4l2WbFlash },
+			{ EWBShade, EV4l2WbShade } };
+		for (TUint i = 0; i < sizeof(map) / sizeof(map[0]); ++i)
+			if (map[i][1] <= ci.iMaximum && !(ci.iMenuSkipMask & (1u << map[i][1])))
+				iInfo.iWhiteBalanceModesSupported |= map[i][0];
+		}
+	RDebug::Printf("PH: camera-a64: plug-in camera %d: %d capture sizes (largest %dx%d), white balance modes %x", iCameraIndex,
+		iImageSizes.Count(), iImageSizes.Count() ? iImageSizes[0].iWidth : 0, iImageSizes.Count() ? iImageSizes[0].iHeight : 0,
+		iInfo.iWhiteBalanceModesSupported);
+	}
+
+TInt CTestCamera::PheSetWhiteBalance(CCamera::TWhiteBalance aMode)
+	{
+	if (!iPheSource)
+		return KErrNotReady;
+	TPheCamCtrlInfo ci;
+	TInt r;
+	if (iPheSource->QueryCtrl(KV4l2CidAutoNPresetWhiteBalance, ci) == KErrNone)
+		{
+		TInt v = -1;
+		switch (aMode)
+			{
+			case EWBAuto: v = EV4l2WbAuto; break;
+			case EWBDaylight: v = EV4l2WbDaylight; break;
+			case EWBCloudy: v = EV4l2WbCloudy; break;
+			case EWBTungsten: v = EV4l2WbIncandescent; break;
+			case EWBFluorescent: v = EV4l2WbFluorescent; break;
+			case EWBFlash: v = EV4l2WbFlash; break;
+			case EWBShade: v = EV4l2WbShade; break;
+			default: break;
+			}
+		if (v < 0 || (aMode != EWBAuto && !(iInfo.iWhiteBalanceModesSupported & aMode)))
+			return KErrNotSupported;
+		r = iPheSource->SetCtrl(KV4l2CidAutoNPresetWhiteBalance, v);
+		}
+	else if (aMode == EWBAuto)
+		r = iPheSource->SetCtrl(KV4l2CidAutoWhiteBalance, 1);
+	else
+		return KErrNotSupported;
+	if (r == KErrNone)
+		iPheWhiteBalance = aMode;
+	return r;
+	}
+
+void CTestCamera::PheCaptureStill()
+	{
+	iImageCaptureActive = EFalse;
+	delete iPheStill;
+	iPheStill = NULL;
+	delete iPheStillData;
+	iPheStillData = NULL;
+	TInt err = iPheSource && iPheStillIndex < iPheStillMode.Count() ? KErrNone : KErrNotReady;
+	if (err == KErrNone)
+		TRAP(err, iPheStill = iPheSource->CaptureStillL(iPheStillMode[iPheStillIndex], EFalse));
+	if (err == KErrNone && (iStillImageFormat == EFormatJpeg || iStillImageFormat == EFormatExif))
+		{
+		if (!iPheSaver)
+			iPheSaver = new CPheJpegSaver(*this);
+		if (!iPheSaver)
+			err = KErrNoMemory;
+		else
+			{
+			TRAP(err, iPheSaver->StartL(*iPheStill, iPheStillData, iStillImageFormat == EFormatExif, iPheJpegQuality));
+			if (err == KErrNone)
+				return;		// PheEncoded() delivers
+			}
+		}
+	else if (err == KErrNone && iStillImageFormat != EFormatFbsBitmapColor16MU)
+		{
+		// the asked display mode: the template's formats
+		const TDisplayMode mode = iStillImageFormat == EFormatFbsBitmapColor4K ? EColor4K :
+			iStillImageFormat == EFormatFbsBitmapColor64K ? EColor64K : EColor16M;
+		CFbsBitmap* b = new CFbsBitmap;
+		err = b ? b->Create(iPheStill->SizeInPixels(), mode) : KErrNoMemory;
+		CFbsBitmapDevice* dev = NULL;
+		if (err == KErrNone)
+			TRAP(err, dev = CFbsBitmapDevice::NewL(b));
+		CFbsBitGc* gc = NULL;
+		if (err == KErrNone && (err = dev->CreateContext(gc)) == KErrNone)
+			gc->BitBlt(TPoint(0, 0), iPheStill);
+		delete gc;
+		delete dev;
+		delete iPheStill;
+		iPheStill = err == KErrNone ? b : NULL;
+		if (err != KErrNone)
+			delete b;
+		}
+	PheDeliver(err);
+	}
+
+void CTestCamera::PheEncoded(TInt aError)
+	{
+	delete iPheStill;		// the encoded bytes are the still
+	iPheStill = NULL;
+	if (aError == KErrNone && iPheStillData && iPheStillData->Length() >= 12)
+		{
+		const TUint8* p = iPheStillData->Ptr();
+		RDebug::Printf("PH: camera-a64: plug-in still encoded: %d bytes, %02x%02x %02x%02x %c%c%c%c", iPheStillData->Length(),
+			p[0], p[1], p[2], p[3], p[6], p[7], p[8], p[9]);
+		}
+	else
+		RDebug::Printf("PH: camera-a64: plug-in still encode -> %d", aError);
+	PheDeliver(aError);
+	}
+
+void CTestCamera::PheDeliver(TInt aError)
+	{
+	if (iObserver2)
+		{
+		iObserver2->ImageBufferReady(iPheStillBuffer, aError);
+		return;
+		}
+	// MCameraObserver::ImageReady hands the bitmap or the data to the client
+	CFbsBitmap* b = aError == KErrNone ? iPheStill : NULL;
+	HBufC8* d = aError == KErrNone ? iPheStillData : NULL;
+	if (aError == KErrNone)
+		{
+		iPheStill = NULL;
+		iPheStillData = NULL;
+		}
+	iObserver->ImageReady(b, d, aError);
+	}
+
+TInt CTestCamera::PheMenuValue(TUint32 aId, TInt aIndex, TInt& aValue)
+	{
+	return iPheSource ? iPheSource->MenuValue(aId, aIndex, aValue) : KErrNotReady;
+	}
+
+// MPheCameraControls
+TInt CTestCamera::SetCtrl(TUint32 aId, TInt aValue)
+	{
+	return iPheSource ? iPheSource->SetCtrl(aId, aValue) : KErrNotReady;
+	}
+
+TInt CTestCamera::GetCtrl(TUint32 aId, TInt& aValue)
+	{
+	return iPheSource ? iPheSource->GetCtrl(aId, aValue) : KErrNotReady;
+	}
+
+TInt CTestCamera::QueryCtrl(TUint32 aId, TAny* aInfo)
+	{
+	return iPheSource ? iPheSource->QueryCtrl(aId, *static_cast<TPheCamCtrlInfo*>(aInfo)) : KErrNotReady;
+	}
+
+// a point of the upright viewfinder picture (aFrame: the size it was shown at) -> the sensor frame of the viewfinder
+// mode (the inverse of CPheCamSource::Convert's turn) -> the ov5640 driver's focus zone (x << 16 | y), then a single AF
+TInt CTestCamera::FocusAt(const TPoint& aPoint, const TSize& aFrame)
+	{
+	if (!iPheSource || aFrame.iWidth <= 0 || aFrame.iHeight <= 0)
+		return KErrNotReady;
+	const TPheCamFormat& f = iPheSource->Format();
+	const TBool quarter = f.iRotation == 90 || f.iRotation == 270;
+	const TInt uw = quarter ? f.iHeight : f.iWidth, uh = quarter ? f.iWidth : f.iHeight;
+	TInt ux = aPoint.iX * uw / aFrame.iWidth, uy = aPoint.iY * uh / aFrame.iHeight;
+	ux = Max(0, Min(ux, uw - 1));
+	uy = Max(0, Min(uy, uh - 1));
+	if (iPheMirror)
+		ux = uw - 1 - ux;
+	TInt sx, sy;
+	switch (f.iRotation)
+		{
+		case 90: sy = ux; sx = f.iWidth - 1 - uy; break;
+		case 180: sx = f.iWidth - 1 - ux; sy = f.iHeight - 1 - uy; break;
+		case 270: sx = uy; sy = f.iHeight - 1 - ux; break;
+		default: sx = ux; sy = uy; break;
+		}
+	TInt r = iPheSource->SetCtrl(KV4l2CidOv5640FocusZone, (sx << 16) | sy);
+	if (r == KErrNone)
+		r = iPheSource->SetCtrl(KV4l2CidAutoFocusStart, 1);
+	RDebug::Printf("PH: camera-a64: plug-in focus at %d,%d of %dx%d -> sensor %d,%d: %d", aPoint.iX, aPoint.iY, aFrame.iWidth,
+		aFrame.iHeight, sx, sy, r);
+	return r;
+	}
+
+// ---- CPheJpegSaver ----
+CPheJpegSaver::~CPheJpegSaver()
+	{
+	Cancel();
+	delete iEncoder;
+	delete iFrameData;
+	}
+
+void CPheJpegSaver::StartL(const CFbsBitmap& aBitmap, HBufC8*& aData, TBool aExif, TInt aQuality)
+	{
+	Cancel();
+	delete iEncoder;
+	iEncoder = NULL;
+	delete iFrameData;
+	iFrameData = NULL;
+	if (aExif)
+		{
+		// the JPEG codec's Exif class; asking for its metadata is what makes the codec write the APP1 Exif header
+		// (JPEGConvert.cpp: CJpegEncoder::ExifMetadata creates the CExifEncoder its write path checks for)
+		TRAPD(e, iEncoder = CImageEncoder::DataNewL(aData, CImageEncoder::EOptionNone, KImageTypeJPGUid, KNullUid,
+			TUid::Uid(KUidICLJpegEXIFInterface)));
+		if (e == KErrNone && !static_cast<CJPEGExifEncoder*>(iEncoder)->ExifMetadata())
+			e = KErrNotSupported;
+		if (e != KErrNone)
+			{
+			// the image's ICL resolves no Exif-capable JPEG encoder (KErrNotFound seen on the PinePhone, 2026-11-17):
+			// a plain JFIF JPEG then, which every viewer reads; the Exif header is an open gap
+			RDebug::Printf("PH: camera-a64: plug-in Exif encoder -> %d, writing plain JPEG", e);
+			delete iEncoder;
+			iEncoder = NULL;
+			aExif = EFalse;
+			}
+		}
+	if (!aExif)
+		iEncoder = CImageEncoder::DataNewL(aData, _L8("image/jpeg"));
+	if (aQuality > 0)
+		{
+		iFrameData = CFrameImageData::NewL();
+		TJpegImageData* j = new (ELeave) TJpegImageData;
+		j->iSampleScheme = TJpegImageData::EColor420;
+		j->iQualityFactor = aQuality;
+		CleanupStack::PushL(j);
+		User::LeaveIfError(iFrameData->AppendImageData(j));
+		CleanupStack::Pop(j);
+		}
+	iEncoder->Convert(&iStatus, aBitmap, iFrameData);
+	SetActive();
+	}
+
+void CPheJpegSaver::RunL()
+	{
+	delete iEncoder;
+	iEncoder = NULL;
+	iOwner.PheEncoded(iStatus.Int());
+	}
+
+void CPheJpegSaver::DoCancel()
+	{
+	if (iEncoder)
+		iEncoder->Cancel();
+	}
+
+// ---- CPheDirectViewFinder ----
+void CPheDirectViewFinder::Release()
+	{
+	iOwner.iPheDirectVf = NULL;
+	iOwner.iPheVfPaused = EFalse;
+	delete this;
+	}
+
+void CPheDirectViewFinder::PauseViewFinderDirectL()
+	{
+	iOwner.iPheVfPaused = ETrue;
+	}
+
+void CPheDirectViewFinder::ResumeViewFinderDirectL()
+	{
+	iOwner.iPheVfPaused = EFalse;
+	}
+
+CCamera::CCameraDirectViewFinder::TViewFinderState CPheDirectViewFinder::ViewFinderState() const
+	{
+	if (iOwner.iPheVfPaused)
+		return CCamera::CCameraDirectViewFinder::EViewFinderPause;
+	return iOwner.iViewFinderActive ? CCamera::CCameraDirectViewFinder::EViewFinderActive :
+		CCamera::CCameraDirectViewFinder::EViewFinderInActive;
+	}
