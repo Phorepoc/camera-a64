@@ -108,7 +108,11 @@ typedef unsigned long ulong;
 #define clamp_t(t, v, lo, hi) min_t(t, max_t(t, v, lo), hi)
 #define clamp(v, lo, hi) min(max(v, lo), hi)
 #define clamp_val(v, lo, hi) clamp_t(__typeof__(v), v, lo, hi)
-#define abs(x) ({ __typeof__(x) _x = (x); _x < 0 ? -_x : _x; })
+/* Linux's abs() (linux/math.h): an unsigned argument is taken as the signed type of its width, so abs(a - b) of two
+ * unsigned longs is their distance. Taking it as unsigned (our old macro) made ov5640_calc_sys_clk() keep its initial
+ * PLL multiplier of 1 (register 0x3036 = 0x01): no pixel clock, no frames. */
+#define __phe_sabs(x) ({ __typeof__(x) _x = (x); _x < 0 ? -_x : _x; })
+#define abs(x) _Generic((x), 	unsigned long: __phe_sabs((long)(x)), 	unsigned int: __phe_sabs((int)(x)), 	unsigned long long: __phe_sabs((long long)(x)), 	default: __phe_sabs(x))
 #define swap(a, b) do { __typeof__(a) _t = (a); (a) = (b); (b) = _t; } while (0)
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
 #define DIV_ROUND_CLOSEST(n, d) (((n) + (d) / 2) / (d))
