@@ -514,7 +514,25 @@ struct regmap *devm_regmap_init_mmio_clk(struct device *dev, const char *clk_id,
 	m->max = config ? config->max_register : 0;
 	return m;
 }
-int regmap_write(struct regmap *m, unsigned int reg, unsigned int val) { m->base[reg / 4] = val; return 0; }
+/* bring-up trace: the CSI handler acknowledges each interrupt by writing its status back to CH_INT_STA (0x74); count the
+ * bits (CD, FD, FIFO0-2 OF, MUL_ERR, HB_OF, VS) */
+static unsigned int sta_n, sta_bits[8];
+static void trace_int_sta(unsigned int val)
+{
+	unsigned int i;
+	for (i = 0; i < 8; ++i)
+		sta_bits[i] += (val >> i) & 1;
+	if (++sta_n <= 8 || sta_n % 200 == 0)
+		shim_log("camera-a64: csi int #%u sta %02x; totals cd %u fd %u of0 %u of1 %u of2 %u mul %u hb %u vs %u", sta_n, val,
+			sta_bits[0], sta_bits[1], sta_bits[2], sta_bits[3], sta_bits[4], sta_bits[5], sta_bits[6], sta_bits[7]);
+}
+int regmap_write(struct regmap *m, unsigned int reg, unsigned int val)
+{
+	if (reg == 0x74)
+		trace_int_sta(val);
+	m->base[reg / 4] = val;
+	return 0;
+}
 int regmap_read(struct regmap *m, unsigned int reg, unsigned int *val) { *val = m->base[reg / 4]; return 0; }
 int regmap_update_bits(struct regmap *m, unsigned int reg, unsigned int mask, unsigned int val)
 {
