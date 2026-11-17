@@ -38,5 +38,4 @@ LIBRARY			ws32.lib
 LIBRARY			efsrv.lib
 LIBRARY			hal.lib
 LIBRARY			imageconversion.lib
-LIBRARY			jpegexifplugin.lib
 SMPSAFE

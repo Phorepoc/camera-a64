@@ -31,9 +31,7 @@
 #include "TestCameraUids.hrh"
 #include <ecam.h>
 #include <imageconversion.h>
-#include <iclexif.h>
 #include <icl/imagecodecdata.h>
-#include <icl/icl_uids.hrh>
 
 //
 // Main stuff
@@ -1663,6 +1661,9 @@ TInt CTestCamera::PheSetWhiteBalance(CCamera::TWhiteBalance aMode)
 	return r;
 	}
 
+HBufC8* PheExifApp1L(const TSize& aSize, TInt aUnit);
+HBufC8* PheInsertApp1L(const TDesC8& aJpeg, const TDesC8& aApp1);
+
 void CTestCamera::PheCaptureStill()
 	{
 	iImageCaptureActive = EFalse;
@@ -1711,6 +1712,21 @@ void CTestCamera::PheCaptureStill()
 
 void CTestCamera::PheEncoded(TInt aError)
 	{
+	if (aError == KErrNone && iStillImageFormat == EFormatExif && iPheStill && iPheStillData)
+		{
+		HBufC8* exif = NULL;
+		TRAP(aError, {
+			HBufC8* app1 = PheExifApp1L(iPheStill->SizeInPixels(), iPheSource ? iPheSource->Unit() : 0);
+			CleanupStack::PushL(app1);
+			exif = PheInsertApp1L(*iPheStillData, *app1);
+			CleanupStack::PopAndDestroy(app1);
+			});
+		if (exif)
+			{
+			delete iPheStillData;
+			iPheStillData = exif;
+			}
+		}
 	delete iPheStill;		// the encoded bytes are the still
 	iPheStill = NULL;
 	if (aError == KErrNone && iPheStillData && iPheStillData->Length() >= 12)
@@ -1808,26 +1824,10 @@ void CPheJpegSaver::StartL(const CFbsBitmap& aBitmap, HBufC8*& aData, TBool aExi
 	iEncoder = NULL;
 	delete iFrameData;
 	iFrameData = NULL;
-	if (aExif)
-		{
-		// the JPEG codec's Exif class; asking for its metadata is what makes the codec write the APP1 Exif header
-		// (JPEGConvert.cpp: CJpegEncoder::ExifMetadata creates the CExifEncoder its write path checks for)
-		TRAPD(e, iEncoder = CImageEncoder::DataNewL(aData, CImageEncoder::EOptionNone, KImageTypeJPGUid, KNullUid,
-			TUid::Uid(KUidICLJpegEXIFInterface)));
-		if (e == KErrNone && !static_cast<CJPEGExifEncoder*>(iEncoder)->ExifMetadata())
-			e = KErrNotSupported;
-		if (e != KErrNone)
-			{
-			// the image's ICL resolves no Exif-capable JPEG encoder (KErrNotFound seen on the PinePhone, 2026-11-17):
-			// a plain JFIF JPEG then, which every viewer reads; the Exif header is an open gap
-			RDebug::Printf("PH: camera-a64: plug-in Exif encoder -> %d, writing plain JPEG", e);
-			delete iEncoder;
-			iEncoder = NULL;
-			aExif = EFalse;
-			}
-		}
-	if (!aExif)
-		iEncoder = CImageEncoder::DataNewL(aData, _L8("image/jpeg"));
+	// aExif: the plain JPEG here; CTestCamera::PheEncoded() adds our own APP1 (the image resolves no Exif-capable
+	// ICL encoder, KErrNotFound on the PinePhone 2026-11-17)
+	(void)aExif;
+	iEncoder = CImageEncoder::DataNewL(aData, _L8("image/jpeg"));
 	if (aQuality > 0)
 		{
 		iFrameData = CFrameImageData::NewL();
@@ -1879,4 +1879,115 @@ CCamera::CCameraDirectViewFinder::TViewFinderState CPheDirectViewFinder::ViewFin
 		return CCamera::CCameraDirectViewFinder::EViewFinderPause;
 	return iOwner.iViewFinderActive ? CCamera::CCameraDirectViewFinder::EViewFinderActive :
 		CCamera::CCameraDirectViewFinder::EViewFinderInActive;
+	}
+
+// ---- our own Exif APP1 (Exif 2.3, little-endian TIFF), so EFormatExif does not depend on an ICL Exif encoder ----
+
+static void Put16(TUint8* aP, TUint aV) { aP[0] = (TUint8)aV; aP[1] = (TUint8)(aV >> 8); }
+static void Put32(TUint8* aP, TUint aV) { Put16(aP, aV & 0xFFFF); Put16(aP + 2, aV >> 16); }
+
+// one 12-byte IFD entry; aValue = the value itself (fits in 4 bytes) or the offset of the data from the TIFF header
+static void Entry(TUint8*& aP, TUint aTag, TUint aType, TUint aCount, TUint aValue)
+	{
+	Put16(aP, aTag);
+	Put16(aP + 2, aType);
+	Put32(aP + 4, aCount);
+	if (aType == 3 && aCount == 1)
+		{
+		Put16(aP + 8, aValue);
+		Put16(aP + 10, 0);
+		}
+	else
+		Put32(aP + 8, aValue);
+	aP += 12;
+	}
+
+// the APP1 segment for a still of aSize (already upright: orientation 1). Make/Model as Megapixels' PinePhone config;
+// FNumber and FocalLength from the same config (rear f/3.0 3.33 mm, front f/2.8 2.6 mm). No exposure time: the
+// sensors report exposure in lines, not seconds.
+HBufC8* PheExifApp1L(const TSize& aSize, TInt aUnit)
+	{
+	enum { EAscii = 2, EShort = 3, ELong = 4, ERational = 5, EUndefined = 7 };
+	_LIT8(KMake, "PINE64");
+	_LIT8(KModel, "PinePhone");
+	_LIT8(KSoftware, "Phorepoc camera-a64");
+	TBuf8<20> when;		// "YYYY:MM:DD HH:MM:SS" + NUL
+	TTime now;
+	now.HomeTime();
+	const TDateTime d = now.DateTime();
+	when.Format(_L8("%04d:%02d:%02d %02d:%02d:%02d"), d.Year(), (TInt)d.Month() + 1, d.Day() + 1, d.Hour(), d.Minute(), d.Second());
+	when.Append(TChar(0));
+
+	const TUint KIfd0 = 8, KIfd0Entries = 6;
+	const TUint KExifIfd = KIfd0 + 2 + KIfd0Entries * 12 + 4, KExifEntries = 7;
+	TUint data = KExifIfd + 2 + KExifEntries * 12 + 4;
+	const TUint make = data; data += KMake().Length() + 1;
+	const TUint model = data; data += KModel().Length() + 1;
+	const TUint software = data; data += KSoftware().Length() + 1;
+	const TUint dateTime = data; data += 20;
+	const TUint fnumber = data; data += 8;
+	const TUint focal = data; data += 8;
+	const TUint tiffLen = data;
+
+	HBufC8* app1 = HBufC8::NewL(4 + 6 + tiffLen);
+	TPtr8 a = app1->Des();
+	a.SetLength(4 + 6 + tiffLen);
+	a.FillZ();
+	TUint8* b = &a[0];
+	b[0] = 0xFF;
+	b[1] = 0xE1;
+	b[2] = (TUint8)((2 + 6 + tiffLen) >> 8);	// the length counts itself, not the marker
+	b[3] = (TUint8)(2 + 6 + tiffLen);
+	Mem::Copy(b + 4, "Exif\0\0", 6);
+	TUint8* t = b + 10;		// the TIFF header: offsets count from here
+	t[0] = 'I';
+	t[1] = 'I';
+	Put16(t + 2, 42);
+	Put32(t + 4, KIfd0);
+
+	TUint8* p = t + KIfd0;
+	Put16(p, KIfd0Entries);
+	p += 2;
+	Entry(p, 0x010F, EAscii, KMake().Length() + 1, make);
+	Entry(p, 0x0110, EAscii, KModel().Length() + 1, model);
+	Entry(p, 0x0112, EShort, 1, 1);				// Orientation: top-left (the pixels are already upright)
+	Entry(p, 0x0131, EAscii, KSoftware().Length() + 1, software);
+	Entry(p, 0x0132, EAscii, 20, dateTime);
+	Entry(p, 0x8769, ELong, 1, KExifIfd);		// the Exif IFD
+	Put32(p, 0);								// no IFD1
+	p = t + KExifIfd;
+	Put16(p, KExifEntries);
+	p += 2;
+	Entry(p, 0x829D, ERational, 1, fnumber);
+	Entry(p, 0x9000, EUndefined, 4, '0' | '2' << 8 | '3' << 16 | '0' << 24);	// ExifVersion "0230"
+	Entry(p, 0x9003, EAscii, 20, dateTime);	// DateTimeOriginal
+	Entry(p, 0x9004, EAscii, 20, dateTime);	// DateTimeDigitized
+	Entry(p, 0x920A, ERational, 1, focal);
+	Entry(p, 0xA002, ELong, 1, aSize.iWidth);	// PixelXDimension
+	Entry(p, 0xA003, ELong, 1, aSize.iHeight);
+	Put32(p, 0);
+
+	Mem::Copy(t + make, KMake().Ptr(), KMake().Length());
+	Mem::Copy(t + model, KModel().Ptr(), KModel().Length());
+	Mem::Copy(t + software, KSoftware().Ptr(), KSoftware().Length());
+	Mem::Copy(t + dateTime, when.Ptr(), 20);
+	Put32(t + fnumber, aUnit == 0 ? 30 : 28);
+	Put32(t + fnumber + 4, 10);
+	Put32(t + focal, aUnit == 0 ? 333 : 260);
+	Put32(t + focal + 4, 100);
+	return app1;
+	}
+
+// insert aApp1 after the JPEG's SOI and its JFIF APP0 (JFIF wants APP0 first; Exif readers find APP1 after it)
+HBufC8* PheInsertApp1L(const TDesC8& aJpeg, const TDesC8& aApp1)
+	{
+	TInt at = 2;
+	if (aJpeg.Length() > 6 && aJpeg[2] == 0xFF && aJpeg[3] == 0xE0)
+		at = 4 + (aJpeg[4] << 8 | aJpeg[5]);
+	HBufC8* out = HBufC8::NewL(aJpeg.Length() + aApp1.Length());
+	TPtr8 o = out->Des();
+	o.Copy(aJpeg.Left(at));
+	o.Append(aApp1);
+	o.Append(aJpeg.Mid(at));
+	return out;
 	}

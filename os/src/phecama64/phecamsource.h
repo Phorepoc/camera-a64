@@ -42,6 +42,8 @@ private:
 	void Next();
 	TInt StartViewFinder();
 	static void Convert(const TUint8* aUyvy, const TPheCamFormat& aFmt, CFbsBitmap& aOut, TBool aMirror);
+	static void ConvertBggr(const TUint8* aRaw, const TPheCamFormat& aFmt, CFbsBitmap& aOut, TBool aMirror);
+	TBool RawStill(const TSize& aSensorSize) const;
 
 	RPheCamera iCam;
 	TInt iUnit;
