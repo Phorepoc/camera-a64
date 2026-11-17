@@ -469,6 +469,10 @@ void enable_irq(unsigned int irq) { phe_hw_irq_enable((int)irq, 1); }
 void disable_irq(unsigned int irq) { phe_hw_irq_enable((int)irq, 0); }
 
 /* ---- coherent DMA (vb2-dma-contig's allocator) ---- */
+/* A DMA address is the bus master's view, not the CPU's: Linux applies the DT dma-ranges (sun50i-a64.dtsi, the MBUS
+ * dram-controller: <0 0x40000000 0xc0000000>, so bus address = phys - 0x40000000). Handing out the physical address
+ * made the CSI write 1 GB above its buffer. The board glue states the offset. */
+extern const uint32_t phe_board_dma_offset;
 void *dma_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle, gfp_t flag, unsigned long attrs)
 {
 	uint32_t phys = 0;
@@ -476,11 +480,11 @@ void *dma_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle, g
 	(void)dev; (void)flag; (void)attrs;
 	v = phe_hw_dma_alloc(size, &phys);
 	if (v)
-		*dma_handle = phys;
+		*dma_handle = phys - phe_board_dma_offset;
 	return v;
 }
 void dma_free_attrs(struct device *dev, size_t size, void *cpu_addr, dma_addr_t dma_handle, unsigned long attrs)
-{ (void)dev; (void)attrs; phe_hw_dma_free(cpu_addr, size, dma_handle); }
+{ (void)dev; (void)attrs; phe_hw_dma_free(cpu_addr, size, dma_handle + phe_board_dma_offset); }
 void *dma_alloc_coherent(struct device *dev, size_t size, dma_addr_t *h, gfp_t gfp) { return dma_alloc_attrs(dev, size, h, gfp, 0); }
 void dma_free_coherent(struct device *dev, size_t size, void *v, dma_addr_t h) { dma_free_attrs(dev, size, v, h, 0); }
 int dma_mapping_error(struct device *dev, dma_addr_t a) { (void)dev; return a == DMA_MAPPING_ERROR; }

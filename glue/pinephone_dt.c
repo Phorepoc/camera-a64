@@ -50,6 +50,8 @@ static const struct phe_prop csi_props[] = {
 	{ "resets", REF(ccu, 1, RST_BUS_CSI) },
 	{ "status", STRS("okay") },
 	END };
+/* sun50i-a64.dtsi: mbus "dma-ranges = <0x00000000 0x40000000 0xc0000000>" -- DMA masters see DRAM at bus address 0 */
+const uint32_t phe_board_dma_offset = 0x40000000;
 static struct phe_node csi = { .name = "csi@1cb0000", .props = csi_props,
 	.children = (struct phe_node *const[]){ &csi_port, NULL } };
 
