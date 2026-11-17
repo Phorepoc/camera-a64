@@ -572,17 +572,45 @@ int i2c_add_adapter(struct i2c_adapter *adap)
 		adap->nr = next_nr++;
 	if (!adap->dev.fwnode)
 		return 0;
-	/* the clients: every available child with a "reg" (the sensors), probed in tree order */
-	fwnode_for_each_child_node(adap->dev.fwnode, child) {
-		u32 addr;
-		struct i2c_client *c;
-		if (!fwnode_device_is_available(child) || fwnode_property_read_u32(child, "reg", &addr))
-			continue;
-		c = new_client(adap, child, (unsigned short)addr);
-		if (IS_ERR(c))
-			return PTR_ERR(c);
-		if (phe_i2c_bind(c))
-			shim_free(c);
+	/* the clients: every available child with a "reg" (the sensors), probed in tree order. A probe that returns
+	 * -EPROBE_DEFER is retried, as the Linux driver core does, after another device has bound (the GC2145 defers
+	 * when it cannot be reached; the OV5640 probing next moves itself from the shared 0x3c to 0x4c) */
+	{
+		struct i2c_client *deferred[MAX_ADAP * 2];
+		int nd = 0, progress = 0, r;
+		fwnode_for_each_child_node(adap->dev.fwnode, child) {
+			u32 addr;
+			struct i2c_client *c;
+			if (!fwnode_device_is_available(child) || fwnode_property_read_u32(child, "reg", &addr))
+				continue;
+			c = new_client(adap, child, (unsigned short)addr);
+			if (IS_ERR(c))
+				return PTR_ERR(c);
+			r = phe_i2c_bind(c);
+			if (r == -EPROBE_DEFER && nd < (int)(sizeof(deferred) / sizeof(deferred[0])))
+				deferred[nd++] = c;
+			else if (r)
+				shim_free(c);
+			else
+				progress = 1;
+		}
+		while (nd && progress) {
+			int i, n = nd;
+			progress = 0;
+			nd = 0;
+			for (i = 0; i < n; ++i) {
+				r = phe_i2c_bind(deferred[i]);
+				shim_log("camera-a64: deferred probe of %s -> %d", deferred[i]->name, r);
+				if (r == -EPROBE_DEFER)
+					deferred[nd++] = deferred[i];
+				else if (r)
+					shim_free(deferred[i]);
+				else
+					progress = 1;
+			}
+		}
+		while (nd)
+			shim_free(deferred[--nd]);
 	}
 	return 0;
 }

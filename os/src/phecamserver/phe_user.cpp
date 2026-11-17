@@ -119,6 +119,7 @@ extern "C" void shim_udelay(unsigned us)		// busy wait: the bit-banged I2C needs
 	while ((TUint64)(User::FastCounter() - start) < ticks)
 		;
 	}
+static TUint32 Ms();
 extern "C" void shim_msleep(unsigned ms) { User::AfterHighRes(ms ? ms * 1000 : 1000); }
 extern "C" void shim_usleep(unsigned us) { if (us < 1000) shim_udelay(us); else User::AfterHighRes(us); }
 extern "C" unsigned long shim_jiffies(void)
@@ -221,9 +222,18 @@ extern "C" int phe_hw_irq_bind(int irq, int (*isr)(int, void *), void *ctx)
 extern "C" void phe_hw_irq_enable(int, int on) { Hw.IrqEnable(on); }
 
 // ---- clocks, reset, GPIOs, rails ----
-extern "C" int phe_hw_clk_enable(unsigned int id, int on) { return Hw.Clock(id, on) == KErrNone ? 0 : -22; }
+static TUint32 Ms() { return (TUint32)((TUint64)User::FastCounter() * 1000 / FastHz()); }	// trace timestamps (wraps: relative use only)
+extern "C" int phe_hw_clk_enable(unsigned int id, int on)
+	{
+	RDebug::Printf("PH: camera-a64: hw %u ms clk %u %s", Ms(), id, on ? "on" : "off");
+	return Hw.Clock(id, on) == KErrNone ? 0 : -22;
+	}
 extern "C" unsigned long phe_hw_clk_get_rate(unsigned int id) { TUint32 hz = 0; Hw.ClockRate(id, hz); return hz; }
-extern "C" int phe_hw_clk_set_rate(unsigned int id, unsigned long rate) { return Hw.SetClockRate(id, rate) == KErrNone ? 0 : -22; }
+extern "C" int phe_hw_clk_set_rate(unsigned int id, unsigned long rate)
+	{
+	RDebug::Printf("PH: camera-a64: hw %u ms clk %u rate %lu", Ms(), id, rate);
+	return Hw.SetClockRate(id, rate) == KErrNone ? 0 : -22;
+	}
 extern "C" int phe_hw_reset(unsigned int id, int assert) { return Hw.Reset(id, assert) == KErrNone ? 0 : -22; }
 
 static TUint8 OpenDrain[5][32];
@@ -232,6 +242,7 @@ extern "C" int phe_hw_gpio_dir(unsigned int bank, unsigned int pin, int output, 
 	if (bank >= 5 || pin >= 32)
 		return -22;
 	OpenDrain[bank][pin] = (TUint8)open_drain;
+	RDebug::Printf("PH: camera-a64: hw %u ms gpio P%c%u dir %s val %d od %d", Ms(), 'A' + bank, pin, output ? "out" : "in", value, open_drain);
 	TA64CamHwGpio g = { (TUint8)bank, (TUint8)pin,
 		(TUint8)(output ? (EA64GpioOutput | (open_drain ? EA64GpioOpenDrain : 0)) : EA64GpioInput), (TUint8)value };
 	TInt r = Hw.Gpio(g);
@@ -258,7 +269,11 @@ extern "C" int phe_hw_rail(const char *name, int on)
 	static const char *const KNames[] = { "reg_aldo1", "reg_dldo3", "reg_eldo3" };	// = TA64Rail order
 	for (TInt i = 0; i < 3; ++i)
 		if (!shim_strcmp(KNames[i], name))
-			return Hw.Rail(i, on) == KErrNone ? 0 : -5;
+			{
+			TInt r = Hw.Rail(i, on);
+			RDebug::Printf("PH: camera-a64: hw %u ms rail %s %s -> %d", Ms(), name, on ? "on" : "off", r);
+			return r == KErrNone ? 0 : -5;
+			}
 	return -19;
 	}
 

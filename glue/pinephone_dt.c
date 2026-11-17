@@ -68,7 +68,11 @@ static const struct phe_prop gc2145_props[] = {
 	{ "DVDD-supply", REF(reg_aldo1, 0) },
 	{ "IOVDD-supply", REF(reg_eldo3, 0) },
 	{ "reset-gpios", REF(pio, 3, 4, 16, GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN) },	/* PE16 */
-	{ "enable-gpios", REF(pio, 3, 4, 17, GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN) },	/* PE17 */
+	/* PE17 and PC0 below: push-pull here (the DT says open drain). Released, these lines have no pull-up and read 0,
+	 * which leaves the sensor ACTIVE on the shared I2C bus, holding SCL low (the 2010 PDD's boot-975 finding, and
+	 * camera-port.md section 10: every SCL release read low). Driving the disabled level keeps the other sensor off
+	 * the bus. */
+	{ "enable-gpios", REF(pio, 3, 4, 17, GPIO_ACTIVE_LOW) },	/* PE17 */
 	{ "orientation", U32S(0) },
 	{ "rotation", U32S(90) },
 	END };
@@ -89,7 +93,7 @@ static const struct phe_prop ov5640_props[] = {
 	{ "DOVDD-supply", REF(reg_aldo1, 0) },
 	{ "DVDD-supply", REF(reg_eldo3, 0) },
 	{ "reset-gpios", REF(pio, 3, 3, 3, GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN) },	/* PD3 */
-	{ "powerdown-gpios", REF(pio, 3, 2, 0, GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN) },	/* PC0 */
+	{ "powerdown-gpios", REF(pio, 3, 2, 0, GPIO_ACTIVE_HIGH) },	/* PC0: push-pull, see PE17 above */
 	{ "orientation", U32S(1) },
 	{ "rotation", U32S(270) },
 	END };
