@@ -40,6 +40,7 @@ public:
 	TBool iFrameWanted;
 	RSemaphore iCmdSem, iDoneSem;
 	TCmd iCmd;
+	volatile TBool iCmdPending;	// set by Run() before it signals iCmdSem
 	TInt iResult;
 	TBool iStreaming;
 	TUint8* iFrame;
@@ -49,6 +50,7 @@ public:
 TInt TWorker::Run(TCmd aCmd)
 	{
 	iCmd = aCmd;
+	iCmdPending = ETrue;
 	iCmdSem.Signal();
 	iDoneSem.Wait();
 	return iResult;
@@ -60,9 +62,9 @@ TInt TWorker::Loop()
 		{
 		if (iStreaming)
 			{
-			// no command pending: one frame. (Not iCmdSem.Wait(0): an EKA2 semaphore timeout of 0 means "no timeout",
+			// no command pending: one frame. (A flag, not iCmdSem.Wait(0): an EKA2 semaphore timeout of 0 means "no timeout",
 			// so the worker blocked there for good and never dequeued a frame.)
-			if (iCmdSem.Count() <= 0)
+			if (!iCmdPending)
 				{
 				TInt n = phe_camera_next_frame(iFrame, iFrameSize);
 				iLock.Wait();
@@ -79,6 +81,7 @@ TInt TWorker::Loop()
 			}
 		else
 			iCmdSem.Wait();
+		iCmdPending = EFalse;
 		TInt r = KErrNone;
 		switch (iCmd)
 			{
