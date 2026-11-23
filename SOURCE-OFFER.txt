@@ -1,7 +1,7 @@
 Camera drivers for the PinePhone (camera-a64) -- licence notice and source offer
 
 This package contains camera drivers from the Linux kernel (sun6i-csi, ov5640, gc2145, i2c-gpio, i2c-algo-bit),
-licensed under the GNU General Public License version 2 (GPL-2.0), built together with our compatibility layer and
+licensed under the GNU General Public License version 2 (GPL-2.0), built together with Phorepoc's compatibility layer and
 glue, which are GPL-2.0-only as well. The licence texts are installed with this package.
 
 Corresponding source, available to anyone who has this package, for at least three years after the release you
@@ -9,10 +9,10 @@ installed it from:
 
   1. The unmodified Linux files, from https://codeberg.org/megi/linux at commit
      88af81e226a88ae422a9c301246e7ae64cda0b75, each pinned by SHA-256 in linux/SHA256SUMS of the repository below.
-  2. Our files and the scripts that build and package the drivers:
+  2. Phorepoc's files and the scripts that build and package the drivers:
        https://github.com/Phorepoc/camera-a64   (the release tag of this package)
      with the toolchain images and build tools in https://github.com/Phorepoc/toolchain and https://github.com/Phorepoc/pdk.
 
 Written offer: if the links above are no longer available, send a request to the address given on the Phorepoc
-organisation page https://github.com/Phorepoc and we will send you the corresponding source on a medium of your choice
+organisation page https://github.com/Phorepoc and Phorepoc will send you the corresponding source on a medium of your choice
 for the cost of the medium.

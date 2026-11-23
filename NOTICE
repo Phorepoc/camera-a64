@@ -1,10 +1,10 @@
 camera-a64: the PinePhone camera drivers of Phorepoc
 Copyright The Phorepoc Authors (see AUTHORS)
 
-Our files (shim/, glue/, recipes/, registry/, os/src/phecamserver/) are licensed under the GNU General Public License,
-version 2 only (LICENSE), the licence of the Linux drivers they are built with; phecam_api.h and our files in
+Phorepoc's files (shim/, glue/, recipes/, registry/, os/src/phecamserver/) are licensed under the GNU General Public License,
+version 2 only (LICENSE), the licence of the Linux drivers they are built with; phecam_api.h and Phorepoc's files in
 os/src/phecama64/ (phecamsource.*, TestCameraUids.hrh, phecama64.mmp) under the Apache License 2.0
-(LICENSES/Apache-2.0.txt). The shim's core started as a copy of our WiFi shim in the
+(LICENSES/Apache-2.0.txt). The shim's core started as a copy of Phorepoc's WiFi shim in the
 adaptation-a64 repository (the same authors), relicensed here under GPL-2.0-only.
 
 linux/ holds files of the Linux kernel, unmodified, from https://codeberg.org/megi/linux at commit
